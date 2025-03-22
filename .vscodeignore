@@ -1,0 +1,24 @@
+# VS Code
+.vscode/**
+
+# Jetbrains
+.idea/**
+
+# Git
+.gitignore
+
+# Typescript
+src/**/*.ts
+tsconfig.json
+
+# Build Files
+.version-getter/**
+build.py
+infos.py
+__pycache__
+
+# Tests
+.tests/**
+
+# Deps
+vscode-cmake-tools-api

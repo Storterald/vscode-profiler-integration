@@ -1,0 +1,82 @@
+{
+  "name": "vscode-profiler-integration",
+  "displayName": "VSCode Profiler Integration",
+  "description": "AMD uProf profiler integration for VSCode.",
+  "version": "--version",
+  "publisher": "Storterald",
+  "engines": {
+    "vscode": "^1.0.0"
+  },
+  "main": "./tsbuild/extension.js",
+  "activationEvents": [
+    "onLanguage:cpp",
+    "onLanguage:c",
+    "onLanguage:cmake",
+    "onCommand:profiler.profile-project"
+  ],
+  "scripts": {
+    "vscode:prepublish": "tsc -p ./"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "VSCode Profiler Integration",
+      "properties": {
+        "vscode.profiler.integration.uProfCLIPath": {
+          "type": "string",
+          "description": "Full path to the AMD uProf CLI executable."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "profiler.profile-project",
+        "title": "VSCode Profiler Integration: Profile the current project",
+        "icon": "resources/profile.svg"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "profiler.profile-project",
+          "when": "editorLangId == 'c' || editorLangId == 'cpp' || resourceFilename == 'CMakeLists.txt'",
+          "group": "navigation@4"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "profiler-view",
+          "title": "Profiler",
+          "icon": "resources/profiler.svg"
+        }
+      ]
+    },
+    "views": {
+      "profiler-view": [
+        {
+          "type": "webview",
+          "icon": "resources/profiler.svg",
+          "id": "profiler.webview",
+          "name": "Profiler"
+        }
+      ]
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@types/vscode": "^1.0.0",
+    "esbuild": "^0.25.1",
+    "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
+  },
+  "repository": {
+    "url": "https://github.com/Storterald/VSCode-Profiler-Integration"
+  }
+}

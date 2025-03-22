@@ -1,0 +1,17 @@
+# VS Code
+.vscode/
+
+# Jetbrains
+.idea/
+node_modules/
+
+# .vsix file
+*.vsix
+
+# Build Files
+.version-getter/
+tsbuild/
+__pycache__
+
+# Tests
+.tests/

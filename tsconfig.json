@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2018",
+    "outDir": "tsbuild",
+    "lib": [
+      "es2018",
+      "DOM"
+    ],
+    "sourceMap": true,
+    "rootDir": "src",
+    "strict": true
+  },
+  "include": [
+    "src",
+    "buttons"
+  ],
+  "exclude": [
+    "node_modules",
+    "tsbuild"
+  ]
+}

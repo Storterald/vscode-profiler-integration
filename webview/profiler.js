@@ -58,6 +58,11 @@ function renderCurrentView() {
         }
 }
 
+function getColorHue(value, rootValue) {
+        const intensity = Math.min(0.8, (0.6 * value) / rootValue + 0.3);
+        return 40 - (40 * intensity);
+}
+
 function renderFlamegraph(root) {
         const graph = document.createElement("div");
         graph.className = "flame-graph";
@@ -72,15 +77,11 @@ function renderFlamegraph(root) {
 
         function processNode(node, x = 0, depth = 0, rootValue) {
                 const width = (node.value / rootValue) * 100;
-                if (width < 0.1)
+                if (width < 0.05)
                         return;
 
-                const filteredChildren = [...node.children]
-                        .filter(child => (child.value / node.value) * 100 >= 5)
-                        .sort((a, b) => b.value - a.value);
-
-                const intensity = Math.min(0.8, (0.6 * node.value) / rootValue + 0.3);
-                const hue = 40 - (40 * intensity);
+                const filteredChildren = node.children.sort((a, b) => b.value - a.value);
+                const hue = getColorHue(node.value, rootValue);
 
                 return {
                         name: node.name,
@@ -100,6 +101,22 @@ function renderFlamegraph(root) {
                 };
         }
 
+        // Unlike text-overflow: ellipsis, this does not show anything if the
+        // container is too small.
+        function getTextToFit(nodeWidth, nodeName, nodeValue) {
+                const maxChars = Math.floor((nodeWidth / 100) * window.innerWidth / 7);
+                if (maxChars <= 3)
+                        return "";
+
+                if (nodeName.length + nodeValue.toString().length + 3 <= maxChars)
+                        return `${nodeName} (${nodeValue})`;
+                
+                if (nodeName.length <= maxChars)
+                        return nodeName;
+
+                return nodeName.substring(0, maxChars - 3) + "...";
+        }
+
         function renderNodes(node) {
                 const element = document.createElement("div");
                 element.className = "flame-node";
@@ -110,7 +127,9 @@ function renderFlamegraph(root) {
                         background: ${node.color};
                 `;
 
-                element.textContent = node.name;
+                const textContent = getTextToFit(node.width, node.name, node.value);
+                if (textContent)
+                        element.textContent = textContent;
 
                 element.addEventListener("mouseenter", () => {
                         tooltip.textContent = node.name;
@@ -155,8 +174,7 @@ function renderCallTree(root) {
                 const data = document.createElement("div");
                 data.className = "calltree-item-data";
 
-                const intensity = Math.min(0.8, (0.6 * node.value) / rootValue + 0.3);
-                const hue = 40 - (40 * intensity);
+                const hue = getColorHue(node.value, rootValue);
 
                 const perc = document.createElement("p");
                 perc.className = "calltree-item-percentage"
@@ -216,7 +234,66 @@ function renderCallTree(root) {
 }
 
 function renderMethodList(root) {
-        mainElement.innerHTML = `<div class="method-list-view">Method List View for ${root.name}</div>`;
+        mainElement.style.cssText = `
+                display: flex;
+                flex-direction: column;
+                overflow-y: scroll;
+                font-family: var(--vscode-editor-font-family);
+                font-weight: 200;
+        `;
+
+        const titlebar = document.createElement("div");
+        titlebar.className = "methods-titlebar";
+        mainElement.appendChild(titlebar);
+
+        const method = document.createElement("div");
+        method.style.width = "50%";
+        titlebar.appendChild(method);
+
+        const methodText = document.createElement("p");
+        methodText.textContent = "Method";
+        method.appendChild(methodText);
+
+        const samples = document.createElement("div");
+        samples.style.width = "20%";
+        titlebar.appendChild(samples);
+
+        const samplesText = document.createElement("p");
+        samplesText.textContent = "Samples";
+        samples.appendChild(samplesText);
+
+        const functions = new Array();
+
+        function addNode(node) {
+                functions.push({ name: node.name, value: node.value });
+                if (node.children)
+                        node.children.forEach(addNode);
+        }
+
+        addNode(root);
+        functions.sort((a, b) => b.value - a.value);
+
+        functions.forEach(node => {
+                const div = document.createElement("div");
+                div.className = "method";
+
+                const name = document.createElement("p");
+                name.textContent = node.name;
+                div.appendChild(name);
+
+                const bar = document.createElement("div");
+                bar.className = "method-bar";
+                div.appendChild(bar);
+
+                const hue = getColorHue(node.value, root.value);
+                const bg = document.createElement("div");
+                bg.className = "method-bar-bg";
+                bg.style.width = `${(node.value / root.value) * 100}%`;
+                bg.style.background = `hsl(${hue}, 100%, 50%)`;
+                bar.appendChild(bg);
+
+                mainElement.appendChild(div);
+        });
 }
 
 window.addEventListener("message", event => {

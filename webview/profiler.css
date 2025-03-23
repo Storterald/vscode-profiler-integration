@@ -72,7 +72,6 @@ body {
     box-sizing: border-box;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
     height: 18px;
     transition: filter 0.2s;
     font-family: var(--vscode-font-family);
@@ -145,4 +144,49 @@ body {
 
 .calltree-item-percentage {
     font-weight: 600;
+}
+
+.method {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding-left: 3px;
+}
+
+.method p {
+    margin: 0px;
+    padding: 3px 0px;
+    width: 50%;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.method-bar {
+    width: 20%;
+    height: calc(100% - 2px);
+    align-content: center;
+    background-color: var(--vscode-sideBar-background);
+}
+
+.method-bar-bg {
+    height: 100%;
+}
+
+.methods-titlebar {
+    display: flex;
+    align-items: center;
+    min-height: 30px;
+    border-bottom: 1px solid var(--vscode-editorGroup-border);
+}
+
+.methods-titlebar div {
+    align-content: center;
+    height: 100%;
+    border-right: 1px solid var(--vscode-editorGroup-border);
+}
+
+.methods-titlebar p {
+    margin: 0px;
+    padding-left: 3px;
 }

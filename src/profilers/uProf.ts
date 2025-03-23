@@ -150,7 +150,6 @@ export class AMDuProf implements IProfiler {
 
                 const root: StackFrame = { name: "[ROOT]", value: 0, children: [] };
                 for (const frames of callstack.values()) {
-                        // Sort frames by descending depth so leaf is first
                         frames.sort((a, b) => b.depth - a.depth);
 
                         let currentNode = root;
@@ -158,11 +157,11 @@ export class AMDuProf implements IProfiler {
                                 let functionName = functions.get(frame.functionId);
 
                                 if (!functionName) {
-                                        if (functionModules.get(frame.functionId))
-                                                // Use module name if present
-                                                functionName = `${functionModules.get(frame.functionId)}!:0x69`
+                                        const moduleName = functionModules.get(frame.functionId);
+                                        if (moduleName)
+                                                functionName = `${moduleName}!:0x${frame.functionId.toString(16)}`
                                         else
-                                                functionName = "unknown";
+                                                functionName = `unknown!:0x${frame.functionId.toString(16)}`;
                                 }
 
                                 // Check if there's an existing child with the same name
@@ -172,7 +171,6 @@ export class AMDuProf implements IProfiler {
                                         currentNode.children.push(childNode);
                                 }
 
-                                // Move 'up' the callstack
                                 currentNode = childNode;
                         }
 
@@ -213,7 +211,7 @@ export class AMDuProf implements IProfiler {
                 results.forEach(row => {
                         const id = row.callstackId;
                         if (!callstack.has(id)) callstack.set(id, []);
-                        callstack.get(id)!.push(row);
+                                callstack.get(id)!.push(row);
                 });
 
                 return callstack;

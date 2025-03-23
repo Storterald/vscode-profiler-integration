@@ -1,1 +1,2 @@
-SELECT moduleId AS moduleId, functionId AS functionId FROM UnifiedSampleSeries;
+SELECT moduleId AS moduleId, functionId AS functionId
+FROM UnifiedSampleSeries;

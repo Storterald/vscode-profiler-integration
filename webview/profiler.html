@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- meta -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Profiler</title>
+    <!-- css -->
+  </head>
+  <body>
+    <div class="editor">
+      <div class="titlebar">
+        <div class="titlebar-button" data-view="flame">
+          <p class="titlebar-button-text">Flame Graph</p>
+          <div class="titlebar-button-border active"></div>
+        </div>
+        <div class="titlebar-button" data-view="calltree">
+          <p class="titlebar-button-text">Call Tree</p>
+          <div class="titlebar-button-border"></div>
+        </div>
+        <div class="titlebar-button" data-view="methods">
+          <p class="titlebar-button-text">Method List</p>
+          <div class="titlebar-button-border"></div>
+        </div>
+      </div>
+      <div class="main"></div>
+    </div>
+    <div class="tooltip"></div>
+    <!-- js -->
+  </body>
+</html>

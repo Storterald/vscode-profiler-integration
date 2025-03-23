@@ -15,6 +15,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 function getProfileCommand(context: vscode.ExtensionContext): vscode.Disposable {
         return vscode.commands.registerCommand("profiler.profile-project", async () => {
+                // TODO support for single file applications
                 const exe: string = await vscode.commands.executeCommand("cmake.getLaunchTargetPath");
                 await vscode.commands.executeCommand("cmake.build");
 

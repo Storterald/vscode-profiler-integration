@@ -26,7 +26,6 @@ function getProfileCommand(context: vscode.ExtensionContext): vscode.Disposable 
                 if (!root)
                         return;
                 
-                fs.writeFileSync("D:/tree.json", JSON.stringify(root, null, 2));
                 profilerWebview.updateFlamegraph(root);
                 vscode.commands.executeCommand('profiler.webview.focus');
         });

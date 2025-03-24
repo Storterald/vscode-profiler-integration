@@ -193,7 +193,7 @@ export class AMDuProf implements IProfiler {
 
         private async _getFunctions(context: vscode.ExtensionContext, db: sqlite.Database): Promise<Map<number, string>> {
                 const query = await this._loadSQL(context, "functions.sql");
-                const results = await db.all(query);
+                const results = await db.all(query) as { functionId: number, moduleId: number, functionName: string }[];
 
                 const functions = new Map<number, string>();
                 results.forEach(({ functionId, moduleId, functionName }) => {
@@ -219,7 +219,7 @@ export class AMDuProf implements IProfiler {
 
         private async _getFunctionModules(context: vscode.ExtensionContext, db: sqlite.Database): Promise<Map<number, string | undefined>> {
                 const query1 = await this._loadSQL(context, "modules.sql");
-                const results1 = await db.all(query1);
+                const results1 = await db.all(query1) as { moduleId: number, modulePath: string }[];
 
                 const moduleNames = new Map<number, string>();
                 results1.forEach(({ moduleId, modulePath }) => {
@@ -227,7 +227,7 @@ export class AMDuProf implements IProfiler {
                 });
 
                 const query2 = await this._loadSQL(context, "unifiedSampleSeries.sql");
-                const results2 = await db.all(query2);
+                const results2 = await db.all(query2) as { moduleId: number, functionId: number }[];
 
                 const functionModules = new Map<number, string | undefined>();
                 results2.forEach(({ moduleId, functionId }) => {

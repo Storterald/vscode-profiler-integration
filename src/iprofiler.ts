@@ -15,4 +15,10 @@ export interface IProfiler {
          * @param exePath path of the application to profile
          */
         profile(context: vscode.ExtensionContext, exePath: string): Promise<StackFrame | undefined>;
+
+        /**
+         * Returns the path to the CLI interface of the profiler.
+         * Error message handling is on the cli function.
+         */
+        cli(): string | undefined;
 }

@@ -74,6 +74,7 @@ body {
     overflow: hidden;
     height: 18px;
     transition: filter 0.2s;
+    font-weight: 500;
     font-family: var(--vscode-font-family);
     border-left: 1px solid var(--vscode-editor-background)
 }

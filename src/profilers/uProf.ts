@@ -14,7 +14,7 @@ interface CallstackFrame {
 
 export class AMDuProf implements IProfiler {
         public async profile(context: vscode.ExtensionContext, exePath: string): Promise<StackFrame | undefined> {
-                const cli: string | undefined = this._getCLI();
+                const cli: string | undefined = this.cli();
                 if (!cli)
                         return;
 
@@ -95,7 +95,7 @@ export class AMDuProf implements IProfiler {
                 })
         }
 
-        private _getCLI(): string | undefined {
+        public cli(): string | undefined {
                 const cli: string | undefined = vscode.workspace.getConfiguration("vscode.profiler.integration").get<string>("uProfCLIPath");
                 if (!cli) {
                         vscode.window.showErrorMessage("AMD uProf CLI executable path not set.");
@@ -113,15 +113,15 @@ export class AMDuProf implements IProfiler {
         private _getProfileCommand(cli: string, cwd: string, out: string, exe: string): string {
                 return `& '${cli}' collect ` +
                         "--config tbp " +
-                        "--timer-interval 1 " +
+                        "--interval 1 " +
                         "--call-graph-interval 1 " +
                         "--call-graph-mode fp " +
                         "--call-graph-depth 256 " +
                         "--call-graph-type user " +
                         // "--trace os " +
-                        `-w ${cwd} ` +
-                        `-o ${out} ` +
-                        exe;
+                        `-w '${cwd}' ` +
+                        `-o '${out}' ` +
+                        `'${exe}'`;
         }
 
         private _getTranslateCommand(cli: string, cwd: string, input: string): string {
@@ -147,56 +147,70 @@ export class AMDuProf implements IProfiler {
                 const functions = await this._getFunctions(context, db);
                 const callstack = await this._getCallstack(context, db);
                 const functionModules = await this._getFunctionModules(context, db);
+                const callstackWeights = await this._getCallstackWeights(context, db);
 
                 const root: StackFrame = { name: "[ROOT]", value: 0, children: [] };
-                for (const frames of callstack.values()) {
-                        frames.sort((a, b) => b.depth - a.depth);
 
+                // Process each callstack sample.
+                for (const frames of callstack.values()) {
+                        frames.sort((a, b) => b.depth - a.depth); // leaf first
+
+                        // Use the merging/folding logic: start at the root and follow frames;
+                        // if a function already exists in the branch, use it (simulate a return).
                         let currentNode = root;
                         for (const frame of frames) {
+                                // Resolve the function name.
                                 let functionName = functions.get(frame.functionId);
-
                                 if (!functionName) {
                                         const moduleName = functionModules.get(frame.functionId);
-                                        if (moduleName)
-                                                functionName = `${moduleName}!:0x${frame.functionId.toString(16)}`
-                                        else
-                                                functionName = `unknown!:0x${frame.functionId.toString(16)}`;
+                                        const functionHex = frame.functionId.toString(16);
+                                        functionName = moduleName ? `${moduleName}!:0x${functionHex}` : `unknown!:0x${functionHex}`;
                                 }
 
-                                // Check if there's an existing child with the same name
                                 let childNode = currentNode.children.find(n => n.name === functionName);
-                                if (!childNode) {
+                                if (childNode) {
+                                        // If found, “fold” the branch by reusing the node.
+                                        currentNode = childNode;
+                                } else {
+                                        // Otherwise, create a new child node.
                                         childNode = { name: functionName, value: 0, children: [] };
                                         currentNode.children.push(childNode);
+                                        currentNode = childNode;
                                 }
-
-                                currentNode = childNode;
                         }
 
-                        // Increment the leaf
-                        currentNode.value += 1;
+                        // Retrieve the sample weight for this callstack (default to 1 if not found)
+                        // and add it to the leaf node.
+                        const sampleWeight = callstackWeights.get(frames[0].callstackId) || 1;
+                        currentNode.value += sampleWeight;
                 }
 
-                // Now sum up children to parents
+                // Now propagate (aggregate) the leaf counts upward.
+                // This aggregation sets a parent’s value to the sum of its children plus its own value.
                 function aggregateValues(node: StackFrame): number {
                         if (node.children.length === 0)
                                 return node.value;
-
-                        node.value = node.children.reduce((acc, c) => acc + aggregateValues(c), 0);
+                        
+                        node.value = node.children.reduce((acc, child) => acc + aggregateValues(child), node.value);
                         return node.value;
                 }
-                
                 aggregateValues(root);
+
+                db.close();
                 return root;
         }
 
         private async _getFunctions(context: vscode.ExtensionContext, db: sqlite.Database): Promise<Map<number, string>> {
+                interface Function {
+                        functionId: number;
+                        functionName: string;
+                }
+
                 const query = await this._loadSQL(context, "functions.sql");
-                const results = await db.all(query) as { functionId: number, moduleId: number, functionName: string }[];
+                const results = await db.all(query) as Function[];
 
                 const functions = new Map<number, string>();
-                results.forEach(({ functionId, moduleId, functionName }) => {
+                results.forEach(({ functionId, functionName }) => {
                         functions.set(functionId, functionName);
                 });
 
@@ -210,11 +224,30 @@ export class AMDuProf implements IProfiler {
                 const callstack = new Map<string, Array<CallstackFrame>>();
                 results.forEach(row => {
                         const id = row.callstackId;
-                        if (!callstack.has(id)) callstack.set(id, []);
-                                callstack.get(id)!.push(row);
+                        if (!callstack.has(id))
+                                callstack.set(id, []);
+
+                        callstack.get(id)!.push(row);
                 });
 
                 return callstack;
+        }
+
+        private async _getCallstackWeights(context: vscode.ExtensionContext,db: sqlite.Database): Promise<Map<string, number>> {
+                interface UnifiedSampleRow {
+                        callstackId: string;
+                        weight: number;
+                }
+
+                const query = await this._loadSQL(context, "weights.sql");
+                const results = await db.all(query) as UnifiedSampleRow[];
+
+                const weightMap = new Map<string, number>();
+                results.forEach(row => {
+                        weightMap.set(row.callstackId, row.weight);
+                });
+
+                return weightMap;
         }
 
         private async _getFunctionModules(context: vscode.ExtensionContext, db: sqlite.Database): Promise<Map<number, string | undefined>> {

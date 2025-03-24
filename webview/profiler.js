@@ -64,16 +64,19 @@ function getColorHue(value, rootValue) {
 }
 
 function renderFlamegraph(root) {
-        const graph = document.createElement("div");
-        graph.className = "flame-graph";
-
         mainElement.style.cssText = `
                 display: flex;
                 flex-direction: column-reverse;
-                position: relative;
                 overflow-y: scroll;
                 overflow-x: hidden;
         `;
+
+        const bottom = document.createElement("div");
+        bottom.className = "flame-graph-bottom";
+        mainElement.appendChild(bottom);
+
+        const graph = document.createElement("div");
+        graph.className = "flame-graph";
 
         function processNode(node, x = 0, depth = 0, rootValue) {
                 const width = (node.value / rootValue) * 100;
@@ -103,14 +106,11 @@ function renderFlamegraph(root) {
 
         // Unlike text-overflow: ellipsis, this does not show anything if the
         // container is too small.
-        function getTextToFit(nodeWidth, nodeName, nodeValue) {
+        function getTextToFit(nodeWidth, nodeName) {
                 const maxChars = Math.floor((nodeWidth / 100) * window.innerWidth / 7);
                 if (maxChars <= 3)
                         return "";
 
-                if (nodeName.length + nodeValue.toString().length + 3 <= maxChars)
-                        return `${nodeName} (${nodeValue})`;
-                
                 if (nodeName.length <= maxChars)
                         return nodeName;
 
@@ -127,12 +127,34 @@ function renderFlamegraph(root) {
                         background: ${node.color};
                 `;
 
-                const textContent = getTextToFit(node.width, node.name, node.value);
+                const textContent = getTextToFit(node.width, node.name);
                 if (textContent)
                         element.textContent = textContent;
 
                 element.addEventListener("mouseenter", () => {
-                        tooltip.textContent = node.name;
+                        const nameDiv = tooltip.querySelector(".tooltip-name");
+                        nameDiv.innerHTML = "";
+
+                        const sample = document.createElement("p");
+                        sample.textContent = `${((node.value / root.value) * 100).toFixed(2)}%`;
+                        nameDiv.appendChild(sample);
+
+                        const separator = document.createElement("p");
+                        separator.textContent = '|';
+                        nameDiv.appendChild(separator);
+
+                        const name = document.createElement("p");
+                        name.textContent = node.name;
+                        name.style.fontWeight = "bold";
+                        nameDiv.appendChild(name);
+
+                        const timeDiv = tooltip.querySelector(".tooltip-time");
+                        timeDiv.innerHTML = "";
+
+                        const time = document.createElement("p");
+                        time.textContent = `${(node.value / 1000).toFixed(2)}s`;
+                        timeDiv.appendChild(time);
+
                         tooltip.style.display = "block";
                         tooltip.style.opacity = "1";
                 });

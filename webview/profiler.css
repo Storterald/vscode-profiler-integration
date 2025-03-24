@@ -64,6 +64,7 @@ body {
 }
 
 .flame-graph {
+    position: relative;
     background-color: var(--vscode-editor-background);
 }
 
@@ -74,14 +75,19 @@ body {
     overflow: hidden;
     height: 18px;
     transition: filter 0.2s;
+    border-left: 1px solid var(--vscode-editor-background);
     font-weight: 500;
     font-family: var(--vscode-font-family);
-    border-left: 1px solid var(--vscode-editor-background)
 }
 
 .flame-node:hover {
     filter: brightness(1.2);
     z-index: 1;
+}
+
+.flame-graph-bottom {
+    height: 20px;
+    border-top: 2px solid var(--vscode-editorGroup-border);
 }
 
 .tooltip {
@@ -98,6 +104,16 @@ body {
     opacity: 0;
     transition: opacity 0.2s;
     border-radius: 3px;
+}
+
+.tooltip p {
+    margin: 0;
+    width: fit-content;
+}
+
+.tooltip-name {
+    display: flex;
+    gap: 7px;
 }
 
 .calltree {

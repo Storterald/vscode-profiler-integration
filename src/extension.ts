@@ -27,6 +27,6 @@ function getProfileCommand(context: vscode.ExtensionContext): vscode.Disposable 
                         return;
                 
                 profilerWebview.updateFlamegraph(root);
-                vscode.commands.executeCommand('profiler.webview.focus');
+                vscode.commands.executeCommand("profiler.webview.focus");
         });
 }

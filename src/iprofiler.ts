@@ -17,6 +17,14 @@ export interface IProfiler {
         profile(context: vscode.ExtensionContext, exePath: string): Promise<StackFrame | undefined>;
 
         /**
+         * Parses an already existent profiler output saved as a .vscprof file.
+         * Error message handling is on the profile function.
+         * 
+         * @param vscprof path to the vscprof file
+         */
+        parse(context: vscode.ExtensionContext, vscprof: string): Promise<StackFrame | undefined>;
+
+        /**
          * Returns the path to the CLI interface of the profiler.
          * Error message handling is on the cli function.
          */

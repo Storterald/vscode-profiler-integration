@@ -1,7 +1,9 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import * as zip from "zip-lib";
 import * as vscode from "vscode";
+import * as crypto from "crypto";
 import * as sqlite from "sqlite";
 import * as sqlite3 from "sqlite3";
 import { IProfiler, StackFrame } from "../iprofiler";
@@ -70,11 +72,11 @@ export class AMDuProf implements IProfiler {
                         if (!translateTask || e.execution.task !== translateTask)
                                 return;
 
-                        const callstack = path.join(dir!, "callstack.db");
                         const cpu = path.join(dir!, "cpu.db");
+                        root = await this._getRoot(context, cpu);
 
-                        root = await this._getRoot(context, callstack, cpu);
-                        // fs.rmSync(out, { recursive: true, force: true }); // clear the created temp directory
+                        await this._pack(context, cpu);
+                        await fs.promises.rm(out, { recursive: true, force: true });
                         done = true;
                 });
 
@@ -110,6 +112,17 @@ export class AMDuProf implements IProfiler {
                 return cli;
         }
 
+        public async parse(context: vscode.ExtensionContext, vscprof: string): Promise<StackFrame | undefined> {
+                const database = await this._unpack(vscprof);
+                if (!database)
+                        return;
+
+                const root = await this._getRoot(context, database);
+                await fs.promises.rm(path.dirname(database), { recursive: true, force: true });
+
+                return root;
+        }
+
         private _getProfileCommand(cli: string, cwd: string, out: string, exe: string): string {
                 return `& '${cli}' collect ` +
                         "--config tbp " +
@@ -142,7 +155,7 @@ export class AMDuProf implements IProfiler {
                 }
         }
 
-        private async _getRoot(context: vscode.ExtensionContext, callstackDbPath: string, cpuDbPath: string): Promise<StackFrame> {
+        private async _getRoot(context: vscode.ExtensionContext, cpuDbPath: string): Promise<StackFrame> {
                 const db = await sqlite.open({ filename: cpuDbPath, driver: sqlite3.Database, mode: sqlite3.OPEN_READONLY });
                 const functions = await this._getFunctions(context, db);
                 const callstack = await this._getCallstack(context, db);
@@ -190,7 +203,7 @@ export class AMDuProf implements IProfiler {
                 function aggregateValues(node: StackFrame): number {
                         if (node.children.length === 0)
                                 return node.value;
-                        
+
                         node.value = node.children.reduce((acc, child) => acc + aggregateValues(child), node.value);
                         return node.value;
                 }
@@ -233,7 +246,7 @@ export class AMDuProf implements IProfiler {
                 return callstack;
         }
 
-        private async _getCallstackWeights(context: vscode.ExtensionContext,db: sqlite.Database): Promise<Map<string, number>> {
+        private async _getCallstackWeights(context: vscode.ExtensionContext, db: sqlite.Database): Promise<Map<string, number>> {
                 interface UnifiedSampleRow {
                         callstackId: string;
                         weight: number;
@@ -272,6 +285,43 @@ export class AMDuProf implements IProfiler {
 
         private async _loadSQL(context: vscode.ExtensionContext, filePath: string): Promise<string> {
                 return fs.promises.readFile(path.join(context.extensionPath, "queries", filePath), "utf8");
+        }
+
+        private async _pack(context: vscode.ExtensionContext, cpuDb: string): Promise<string | undefined> {
+                function getFormattedTime(): string {
+                        return new Date().toISOString().replace("T", "_").replace(/:/g, '-').replace(/\..+/, "");
+                }
+
+                const archive = path.join(context.extensionPath, "cached", `${path.basename(cpuDb)}.zip`);
+                const outputPath = path.join(context.extensionPath, "cached", `${getFormattedTime()}.vscprof`);
+
+                try {
+                        await zip.archiveFile(cpuDb, archive);
+                        await fs.promises.rename(archive, outputPath);
+                        return outputPath;
+                } catch (err) {
+                        vscode.window.showErrorMessage("Error saving the profiled session.");
+                        console.error(err);
+                        return;
+                }
+        }
+
+        private async _unpack(vscprof: string): Promise<string | undefined> {
+                const name = path.parse(vscprof).name;
+                const archive = path.join(os.tmpdir(), name + ".zip");
+                const dir = path.join(os.tmpdir(), name);
+
+                try {
+                        await fs.promises.copyFile(vscprof, archive);
+                        await zip.extract(archive, dir);
+                        await fs.promises.rm(archive);
+                        
+                        return path.join(dir, "cpu.db");
+                } catch (err) {
+                        vscode.window.showErrorMessage("Error loading the profiled session.");
+                        console.error(err);
+                        return;
+                }
         }
 
 }

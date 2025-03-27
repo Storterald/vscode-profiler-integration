@@ -31,11 +31,26 @@ document.querySelectorAll(".titlebar-button").forEach(button => {
                 button.querySelector(".titlebar-button-border").classList.add("active");
 
                 currentView = button.dataset.view;
-                mainElement.innerHTML = "";
-
                 if (currentData)
                         renderCurrentView();
         });
+});
+
+document.querySelector(".input-file").addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file)
+                return;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+                vscode.postMessage({
+                        type: "file-loaded",
+                        name: file.name,
+                        content: Array.from(new Uint8Array(reader.result))
+                });
+        };
+
+        reader.readAsArrayBuffer(file);
 });
 
 function renderCurrentView() {
@@ -44,7 +59,9 @@ function renderCurrentView() {
                 return;
         }
 
+        mainElement.innerHTML = "";
         mainElement.style.cssText = "";
+
         switch (currentView) {
                 case "flame":
                         renderFlamegraph(currentData);

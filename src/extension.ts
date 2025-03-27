@@ -7,7 +7,7 @@ import { ProfilerWebviewProvider } from "./profiler-webview-provider";
 let profilerWebview: ProfilerWebviewProvider;
 
 export function activate(context: vscode.ExtensionContext) {
-        profilerWebview = new ProfilerWebviewProvider(context);
+        profilerWebview = new ProfilerWebviewProvider(AMDuProf, context);
 
         vscode.window.registerWebviewViewProvider("profiler.webview", profilerWebview);
         context.subscriptions.push(getProfileCommand(context));

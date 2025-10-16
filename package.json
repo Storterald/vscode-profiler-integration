@@ -2,7 +2,7 @@
   "name": "vscode-profiler-integration",
   "displayName": "VSCode Profiler Integration",
   "description": "AMD uProf profiler integration for VSCode.",
-  "version": "--version",
+  "version": "1.0.0",
   "publisher": "Storterald",
   "engines": {
     "vscode": "^1.0.0"
@@ -78,6 +78,6 @@
     "zip-lib": "^1.0.5"
   },
   "repository": {
-    "url": "https://github.com/Storterald/VSCode-Profiler-Integration"
+    "url": "https://github.com/Storterald/vscode-profiler-integration"
   }
 }

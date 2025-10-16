@@ -1,7 +1,5 @@
-# VS Code
+# IDEs
 .vscode/**
-
-# Jetbrains
 .idea/**
 
 # Git
@@ -12,13 +10,7 @@ src/**/*.ts
 tsconfig.json
 
 # Build Files
-.version-getter/**
 build.py
-infos.py
-__pycache__
 
 # Tests
 .tests/**
-
-# Deps
-vscode-cmake-tools-api

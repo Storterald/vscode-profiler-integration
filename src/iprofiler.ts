@@ -19,7 +19,8 @@ export interface IProfiler {
         /**
          * Parses an already existent profiler output saved as a .vscprof file.
          * Error message handling is on the profile function.
-         * 
+         *
+         * @param context vscode context
          * @param vscprof path to the vscprof file
          */
         parse(context: vscode.ExtensionContext, vscprof: string): Promise<StackFrame | undefined>;
@@ -28,5 +29,5 @@ export interface IProfiler {
          * Returns the path to the CLI interface of the profiler.
          * Error message handling is on the cli function.
          */
-        cli(): string | undefined;
+        cli(): Promise<string | undefined>;
 }

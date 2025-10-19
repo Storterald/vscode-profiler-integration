@@ -1,11 +1,11 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import * as zip from "zip-lib";
 import * as vscode from "vscode";
-import * as crypto from "crypto";
 import * as sqlite from "sqlite";
 import * as sqlite3 from "sqlite3";
+import { pack, unpack } from "../utils";
+import { ExtensionContext } from "vscode";
 import { IProfiler, StackFrame } from "../iprofiler";
 
 interface CallstackFrame {
@@ -16,27 +16,61 @@ interface CallstackFrame {
 
 export class AMDuProf implements IProfiler {
         public async profile(context: vscode.ExtensionContext, exePath: string): Promise<StackFrame | undefined> {
-                const cli: string | undefined = this.cli();
+                const cli: string | undefined = await this.cli();
                 if (!cli)
                         return;
 
-                const cwd: string = path.dirname(exePath);
-                const out: string = path.join(os.tmpdir(), "uprof");
-
-                // Filled after first Task
-                let root: StackFrame | undefined = undefined;
-                let translateTask: vscode.Task | undefined = undefined;
-                let dir: string | undefined = undefined;
-                let done: boolean = false;
+                const cwd: string    = path.dirname(exePath);
+                const outDir: string = fs.mkdtempSync(path.join(os.tmpdir(), "uprof-"));
 
                 console.info(`Profiling: '${exePath}', cwd: '${cwd}'`)
+
+                try {
+                        return await this._run(context, cli, cwd, outDir, exePath);
+                } finally {
+                        fs.rmSync(outDir, { recursive: true, force: true });
+                }
+        }
+
+        public async parse(context: vscode.ExtensionContext, vscprof: string): Promise<StackFrame | undefined> {
+                const database = await unpack(vscprof, "cpu.db");
+                if (!database)
+                        return;
+
+                try {
+                        return await this._getRoot(context, database);
+                } finally {
+                        fs.rmSync(path.dirname(database), { recursive: true, force: true });
+                }
+        }
+
+        public async cli(): Promise<string | undefined> {
+                const cli: string | undefined = vscode.workspace.getConfiguration("vscode.profiler.integration").get<string>("uProfCLIPath");
+                if (!cli) {
+                        await vscode.window.showErrorMessage("AMD uProf CLI executable path not set.");
+                        return;
+                }
+
+                if (!fs.existsSync(cli) || path.basename(cli) != "AMDuProfCLI.exe") {
+                        await vscode.window.showErrorMessage("Invalid AMD uProf CLI executable path.");
+                        return;
+                }
+
+                return cli;
+        }
+
+        private async _run(context: ExtensionContext, cli: string, cwd: string, outDir: string, exePath: string): Promise<StackFrame | undefined> {
+                let root: StackFrame | undefined           = undefined;
+                let translateTask: vscode.Task | undefined = undefined;
+                let dir: string | undefined                = undefined;
+                let done: boolean                          = false;
 
                 const runTask = new vscode.Task(
                         { type: "shell" },
                         vscode.TaskScope.Workspace,
                         "Profile an application",
                         "VSCode Profiler Integration",
-                        new vscode.ShellExecution(this._getProfileCommand(cli, cwd, out, exePath))
+                        new vscode.ShellExecution(this._getProfileCommand(cli, cwd, outDir, exePath))
                 );
 
                 const runDisposable = vscode.tasks.onDidEndTaskProcess(async (e) => {
@@ -50,7 +84,7 @@ export class AMDuProf implements IProfiler {
                                 return;
                         }
 
-                        dir = this._getFirstChildDirectory(out);
+                        dir = this._getFirstChildDirectory(outDir);
                         if (!dir) {
                                 vscode.window.showErrorMessage("Profiler did not generate any output.");
                                 done = true;
@@ -72,11 +106,11 @@ export class AMDuProf implements IProfiler {
                         if (!translateTask || e.execution.task !== translateTask)
                                 return;
 
+                        translateDisposable.dispose();
                         const cpu = path.join(dir!, "cpu.db");
                         root = await this._getRoot(context, cpu);
 
-                        await this._pack(context, cpu);
-                        await fs.promises.rm(out, { recursive: true, force: true });
+                        await pack(context, cpu);
                         done = true;
                 });
 
@@ -97,33 +131,7 @@ export class AMDuProf implements IProfiler {
                 })
         }
 
-        public cli(): string | undefined {
-                const cli: string | undefined = vscode.workspace.getConfiguration("vscode.profiler.integration").get<string>("uProfCLIPath");
-                if (!cli) {
-                        vscode.window.showErrorMessage("AMD uProf CLI executable path not set.");
-                        return;
-                }
-
-                if (!fs.existsSync(cli) || path.basename(cli) != "AMDuProfCLI.exe") {
-                        vscode.window.showErrorMessage("Invalid AMD uProf CLI executable path.");
-                        return;
-                }
-
-                return cli;
-        }
-
-        public async parse(context: vscode.ExtensionContext, vscprof: string): Promise<StackFrame | undefined> {
-                const database = await this._unpack(vscprof);
-                if (!database)
-                        return;
-
-                const root = await this._getRoot(context, database);
-                await fs.promises.rm(path.dirname(database), { recursive: true, force: true });
-
-                return root;
-        }
-
-        private _getProfileCommand(cli: string, cwd: string, out: string, exe: string): string {
+        private _getProfileCommand(cli: string, cwd: string, outDir: string, exePath: string): string {
                 return `& '${cli}' collect ` +
                         "--config tbp " +
                         "--interval 1 " +
@@ -131,10 +139,9 @@ export class AMDuProf implements IProfiler {
                         "--call-graph-mode fp " +
                         "--call-graph-depth 256 " +
                         "--call-graph-type user " +
-                        // "--trace os " +
                         `-w '${cwd}' ` +
-                        `-o '${out}' ` +
-                        `'${exe}'`;
+                        `-o '${outDir}' ` +
+                        `'${exePath}'`;
         }
 
         private _getTranslateCommand(cli: string, cwd: string, input: string): string {
@@ -164,7 +171,6 @@ export class AMDuProf implements IProfiler {
 
                 const root: StackFrame = { name: "[ROOT]", value: 0, children: [] };
 
-                // Process each callstack sample.
                 for (const frames of callstack.values()) {
                         frames.sort((a, b) => b.depth - a.depth); // leaf first
 
@@ -172,7 +178,6 @@ export class AMDuProf implements IProfiler {
                         // if a function already exists in the branch, use it (simulate a return).
                         let currentNode = root;
                         for (const frame of frames) {
-                                // Resolve the function name.
                                 let functionName = functions.get(frame.functionId);
                                 if (!functionName) {
                                         const moduleName = functionModules.get(frame.functionId);
@@ -182,10 +187,8 @@ export class AMDuProf implements IProfiler {
 
                                 let childNode = currentNode.children.find(n => n.name === functionName);
                                 if (childNode) {
-                                        // If found, “fold” the branch by reusing the node.
                                         currentNode = childNode;
                                 } else {
-                                        // Otherwise, create a new child node.
                                         childNode = { name: functionName, value: 0, children: [] };
                                         currentNode.children.push(childNode);
                                         currentNode = childNode;
@@ -285,43 +288,6 @@ export class AMDuProf implements IProfiler {
 
         private async _loadSQL(context: vscode.ExtensionContext, filePath: string): Promise<string> {
                 return fs.promises.readFile(path.join(context.extensionPath, "queries", filePath), "utf8");
-        }
-
-        private async _pack(context: vscode.ExtensionContext, cpuDb: string): Promise<string | undefined> {
-                function getFormattedTime(): string {
-                        return new Date().toISOString().replace("T", "_").replace(/:/g, '-').replace(/\..+/, "");
-                }
-
-                const archive = path.join(context.extensionPath, "cached", `${path.basename(cpuDb)}.zip`);
-                const outputPath = path.join(context.extensionPath, "cached", `${getFormattedTime()}.vscprof`);
-
-                try {
-                        await zip.archiveFile(cpuDb, archive);
-                        await fs.promises.rename(archive, outputPath);
-                        return outputPath;
-                } catch (err) {
-                        vscode.window.showErrorMessage("Error saving the profiled session.");
-                        console.error(err);
-                        return;
-                }
-        }
-
-        private async _unpack(vscprof: string): Promise<string | undefined> {
-                const name = path.parse(vscprof).name;
-                const archive = path.join(os.tmpdir(), name + ".zip");
-                const dir = path.join(os.tmpdir(), name);
-
-                try {
-                        await fs.promises.copyFile(vscprof, archive);
-                        await zip.extract(archive, dir);
-                        await fs.promises.rm(archive);
-                        
-                        return path.join(dir, "cpu.db");
-                } catch (err) {
-                        vscode.window.showErrorMessage("Error loading the profiled session.");
-                        console.error(err);
-                        return;
-                }
         }
 
 }

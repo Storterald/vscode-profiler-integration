@@ -59,7 +59,7 @@ function renderCurrentView() {
                 return;
         }
 
-        mainElement.innerHTML = "";
+        mainElement.innerHTML     = "";
         mainElement.style.cssText = "";
 
         switch (currentView) {
@@ -301,7 +301,7 @@ function renderMethodList(root) {
         samplesText.textContent = "Samples";
         samples.appendChild(samplesText);
 
-        const functions = new Array();
+        const functions = [];
 
         function addNode(node) {
                 functions.push({ name: node.name, value: node.value });

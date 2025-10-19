@@ -12,7 +12,7 @@ export class ProfilerWebviewProvider implements vscode.WebviewViewProvider {
         private _profiler: IProfiler;
 
         constructor(type: { new(): IProfiler; }, context: vscode.ExtensionContext) {
-                this._ctx = context;
+                this._ctx      = context;
                 this._profiler = new type();
         }
 
@@ -29,38 +29,39 @@ export class ProfilerWebviewProvider implements vscode.WebviewViewProvider {
                 webviewView.webview.onDidReceiveMessage(async (data) => {
                         if (data.type === "ready") {
                                 if (this._pendingData)
-                                        this.updateFlamegraph(this._pendingData);
+                                        await this.updateFlamegraph(this._pendingData);
                         } else if (data.type === "file-loaded") {
                                 const tmp = path.join(os.tmpdir(), path.basename(data.name));
                                 
                                 try {
                                         await fs.promises.writeFile(tmp, Buffer.from(data.content));
                                         this._pendingData = await this._profiler.parse(this._ctx, tmp);
-                                        await fs.promises.rm(tmp);
 
                                         if (this._pendingData)
-                                                this.updateFlamegraph(this._pendingData);
+                                                await this.updateFlamegraph(this._pendingData);
                                 } catch (err) {
-                                        vscode.window.showErrorMessage("Error loading the profiled session.");
+                                        await vscode.window.showErrorMessage("Error loading the profiled session.");
                                         console.log(err);
+                                } finally {
+                                        fs.rmSync(tmp, { force: true });
                                 }
                         }
                 });
         }
 
-        public updateFlamegraph(data: StackFrame) {
+        public async updateFlamegraph(data: StackFrame) {
                 this._pendingData = data;
                 
                 if (this._view)
-                        this._view.webview.postMessage(data);
+                        await this._view.webview.postMessage(data);
         }
 
         private _getHtmlForWebview(webview: vscode.Webview) {
                 const nonce = crypto.randomBytes(16).toString("base64");
 
-                let html: string = fs.readFileSync(path.join(this._ctx.extensionPath, "webview", "profiler.html"), "utf-8");
-                const css = fs.readFileSync(path.join(this._ctx.extensionPath, "webview", "profiler.css"), "utf-8");
-                const js = fs.readFileSync(path.join(this._ctx.extensionPath, "webview", "profiler.js"), "utf-8");
+                let html: string  = fs.readFileSync(path.join(this._ctx.extensionPath, "webview", "profiler.html"), "utf-8");
+                const css: string = fs.readFileSync(path.join(this._ctx.extensionPath, "webview", "profiler.css"), "utf-8");
+                const js: string  = fs.readFileSync(path.join(this._ctx.extensionPath, "webview", "profiler.js"), "utf-8");
 
                 html = html.replace("<!-- meta -->", `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline';">`);
                 html = html.replace("<!-- css -->", `<style>${css}</style>`);

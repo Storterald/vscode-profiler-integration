@@ -14,8 +14,7 @@ const chevrons = `
 </div>`;
 
 let currentData = null;
-let colorCache = {};
-let currentView = "flame";
+let currentView= "flame";
 
 document.querySelectorAll(".titlebar-button").forEach(button => {
         button.addEventListener("click", () => {
@@ -53,12 +52,11 @@ document.querySelector(".input-file").addEventListener("change", async (e) => {
         reader.readAsArrayBuffer(file);
 });
 
-function renderCurrentView() {
-        if (!currentData || !currentData.value) {
-                console.error('[Render] Invalid root node');
-                return;
-        }
+function getCssVariable(name) {
+        return window.getComputedStyle(document.body).getPropertyValue(name);
+}
 
+function renderCurrentView() {
         mainElement.innerHTML     = "";
         mainElement.style.cssText = "";
 
@@ -80,13 +78,15 @@ function getColorHue(value, rootValue) {
         return 40 - (40 * intensity);
 }
 
-function renderFlamegraph(root) {
+function renderFlamegraph(output) {
         mainElement.style.cssText = `
                 display: flex;
                 flex-direction: column-reverse;
                 overflow-y: scroll;
                 overflow-x: hidden;
         `;
+
+        const root = output.stackFrame;
 
         const bottom = document.createElement("div");
         bottom.className = "flame-graph-bottom";
@@ -95,13 +95,20 @@ function renderFlamegraph(root) {
         const graph = document.createElement("div");
         graph.className = "flame-graph";
 
+        const rootColor = getCssVariable("--vscode-profiler-integration.flamegraph.rootColor");
+        const nodeColor = getCssVariable("--vscode-profiler-integration.flamegraph.nodeColor");
+
+        let foregroundColor = getCssVariable("--vscode-profiler-integration.flamegraph.foreground");
+        if (foregroundColor !== "rgba(0, 0, 0, 0)")
+                graph.style.color = foregroundColor;
+
         function processNode(node, x = 0, depth = 0, rootValue) {
                 const width = (node.value / rootValue) * 100;
                 if (width < 0.05)
                         return;
 
                 const filteredChildren = node.children.sort((a, b) => b.value - a.value);
-                const hue = getColorHue(node.value, rootValue);
+                const hue              = getColorHue(node.value, rootValue);
 
                 return {
                         name: node.name,
@@ -109,7 +116,9 @@ function renderFlamegraph(root) {
                         x: x,
                         y: depth * 20,
                         width: width,
-                        color: `hsl(${hue}, 100%, 50%)`,
+                        color: node === root ?
+                                rootColor === "rgba(0, 0, 0, 0)" ? `hsl(${hue}, 100%, 50%)` : rootColor :
+                                nodeColor === "rgba(0, 0, 0, 0)" ? `hsl(${hue}, 100%, 50%)` : nodeColor,
                         children: filteredChildren.reduce((acc, child) => {
                                 const processed = processNode(child, acc.nextX, depth + 1, rootValue);
                                 if (processed) {
@@ -121,7 +130,7 @@ function renderFlamegraph(root) {
                 };
         }
 
-        // Unlike text-overflow: ellipsis, this does not show anything if the
+        // Unlike 'text-overflow: ellipsis', this does not show anything if the
         // container is too small.
         function getTextToFit(nodeWidth, nodeName) {
                 const maxChars = Math.floor((nodeWidth / 100) * window.innerWidth / 7);
@@ -134,7 +143,7 @@ function renderFlamegraph(root) {
                 return nodeName.substring(0, maxChars - 3) + "...";
         }
 
-        function renderNodes(node) {
+        function renderNodes(parent, node) {
                 const element = document.createElement("div");
                 element.className = "flame-node";
                 element.style.cssText = `
@@ -149,28 +158,18 @@ function renderFlamegraph(root) {
                         element.textContent = textContent;
 
                 element.addEventListener("mouseenter", () => {
-                        const nameDiv = tooltip.querySelector(".tooltip-name");
-                        nameDiv.innerHTML = "";
+                        tooltip.querySelector("#executable-label").textContent    = output.exeName;
+                        tooltip.querySelector("#function-name-label").textContent = node.name;
 
-                        const sample = document.createElement("p");
-                        sample.textContent = `${((node.value / root.value) * 100).toFixed(2)}%`;
-                        nameDiv.appendChild(sample);
+                        const absPercentage = (node.value / root.value) * 100;
+                        tooltip.querySelector("#absolute-percentage-label").textContent = `${absPercentage.toFixed(2)}%`;
+                        tooltip.querySelector("#absolute-percentage-bg").style.width    = `${Math.round(absPercentage)}%`;
 
-                        const separator = document.createElement("p");
-                        separator.textContent = '|';
-                        nameDiv.appendChild(separator);
+                        const relPercentage = (node.value / parent.value) * 100;
+                        tooltip.querySelector("#relative-percentage-label").textContent = `${relPercentage.toFixed(2)}%`;
 
-                        const name = document.createElement("p");
-                        name.textContent = node.name;
-                        name.style.fontWeight = "bold";
-                        nameDiv.appendChild(name);
-
-                        const timeDiv = tooltip.querySelector(".tooltip-time");
-                        timeDiv.innerHTML = "";
-
-                        const time = document.createElement("p");
-                        time.textContent = `${(node.value / 1000).toFixed(2)}s`;
-                        timeDiv.appendChild(time);
+                        tooltip.querySelector("#value-label").textContent      = `${node.value}`;
+                        tooltip.querySelector("#value-type-label").textContent = `${output.type}`;
 
                         tooltip.style.display = "block";
                         tooltip.style.opacity = "1";
@@ -178,7 +177,7 @@ function renderFlamegraph(root) {
 
                 element.addEventListener("mousemove", (e) => {
                         tooltip.style.left = `${e.clientX + 15}px`;
-                        tooltip.style.top = `${e.clientY - 10}px`;
+                        tooltip.style.top  = `${e.clientY - 10}px`;
                 });
 
                 element.addEventListener("mouseleave", () => {
@@ -187,17 +186,17 @@ function renderFlamegraph(root) {
                 });
 
                 graph.appendChild(element);
-                node.children.forEach(renderNodes);
+                node.children.forEach(child => renderNodes(node, child));
         }
 
         const processedRoot = processNode(root, 0, 0, root.value);
-        renderNodes(processedRoot);
+        renderNodes(root, processedRoot);
 
         mainElement.appendChild(graph);
 }
 
 
-function renderCallTree(root) {
+function renderCallTree(output) {
         const tree = document.createElement("ul");
         tree.className = "calltree";
 
@@ -205,6 +204,8 @@ function renderCallTree(root) {
                 overflow-y: scroll;
                 overflow-x: hidden;
         `;
+
+        const root = output.stackFrame;
 
         function createListElement(node, rootValue) {
                 const li = document.createElement("li");
@@ -272,7 +273,7 @@ function renderCallTree(root) {
         });
 }
 
-function renderMethodList(root) {
+function renderMethodList(output) {
         mainElement.style.cssText = `
                 display: flex;
                 flex-direction: column;
@@ -280,6 +281,8 @@ function renderMethodList(root) {
                 font-family: var(--vscode-editor-font-family);
                 font-weight: 200;
         `;
+
+        const root = output.stackFrame;
 
         const titlebar = document.createElement("div");
         titlebar.className = "methods-titlebar";
@@ -335,8 +338,12 @@ function renderMethodList(root) {
         });
 }
 
+function isValidEventData(data) {
+        return data.exeName && data.type && data.stackFrame && data.stackFrame.value;
+}
+
 window.addEventListener("message", event => {
-        if (event.data && event.data.name && event.data.value !== undefined) {
+        if (event.data && isValidEventData(event.data)) {
                 currentData = event.data;
                 renderCurrentView();
         } else {

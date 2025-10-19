@@ -1,19 +1,17 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import * as utils from "./utils";
 import * as vscode from "vscode";
 import * as crypto from "crypto";
-import { IProfiler, StackFrame } from "./iprofiler";
+import { ProfilerOutput } from "./iprofiler";
 
 export class ProfilerWebviewProvider implements vscode.WebviewViewProvider {
         private _view?: vscode.WebviewView;
         private _ctx: vscode.ExtensionContext;
-        private _pendingData?: StackFrame;
-        private _profiler: IProfiler;
+        private _pendingData?: ProfilerOutput;
 
-        constructor(type: { new(): IProfiler; }, context: vscode.ExtensionContext) {
-                this._ctx      = context;
-                this._profiler = new type();
+        constructor(context: vscode.ExtensionContext) {
+                this._ctx = context;
         }
 
         public async resolveWebviewView(webviewView: vscode.WebviewView) {
@@ -27,37 +25,28 @@ export class ProfilerWebviewProvider implements vscode.WebviewViewProvider {
                 webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
                 webviewView.webview.onDidReceiveMessage(async (data) => {
-                        if (data.type === "ready") {
+                        switch (data.type) {
+                        case "ready":
                                 if (this._pendingData)
                                         await this.updateFlamegraph(this._pendingData);
-                        } else if (data.type === "file-loaded") {
-                                const tmp = path.join(os.tmpdir(), path.basename(data.name));
-                                
-                                try {
-                                        await fs.promises.writeFile(tmp, Buffer.from(data.content));
-                                        this._pendingData = await this._profiler.parse(this._ctx, tmp);
-
-                                        if (this._pendingData)
-                                                await this.updateFlamegraph(this._pendingData);
-                                } catch (err) {
-                                        await vscode.window.showErrorMessage("Error loading the profiled session.");
-                                        console.log(err);
-                                } finally {
-                                        fs.rmSync(tmp, { force: true });
-                                }
+                                break;
+                        case "file-loaded":
+                                if ((this._pendingData = await utils.unpack(Buffer.from(data.content))))
+                                        await this.updateFlamegraph(this._pendingData);
+                                break;
                         }
                 });
         }
 
-        public async updateFlamegraph(data: StackFrame) {
+        public async updateFlamegraph(data: ProfilerOutput) {
                 this._pendingData = data;
                 
                 if (this._view)
-                        await this._view.webview.postMessage(data);
+                        await this._view.webview.postMessage(this._pendingData);
         }
 
         private _getHtmlForWebview(webview: vscode.Webview) {
-                const nonce = crypto.randomBytes(16).toString("base64");
+                const nonce: string = crypto.randomBytes(16).toString("base64");
 
                 let html: string  = fs.readFileSync(path.join(this._ctx.extensionPath, "webview", "profiler.html"), "utf-8");
                 const css: string = fs.readFileSync(path.join(this._ctx.extensionPath, "webview", "profiler.css"), "utf-8");

@@ -1,5 +1,11 @@
 import * as vscode from "vscode";
 
+export interface ProfilerOutput {
+        exeName: string;
+        type: string;
+        stackFrame: StackFrame;
+}
+
 export interface StackFrame {
         name: string;
         value: number;
@@ -14,16 +20,7 @@ export interface IProfiler {
          * @param context vscode context
          * @param exePath path of the application to profile
          */
-        profile(context: vscode.ExtensionContext, exePath: string): Promise<StackFrame | undefined>;
-
-        /**
-         * Parses an already existent profiler output saved as a .vscprof file.
-         * Error message handling is on the profile function.
-         *
-         * @param context vscode context
-         * @param vscprof path to the vscprof file
-         */
-        parse(context: vscode.ExtensionContext, vscprof: string): Promise<StackFrame | undefined>;
+        profile(context: vscode.ExtensionContext, exePath: string): Promise<ProfilerOutput | undefined>;
 
         /**
          * Returns the path to the CLI interface of the profiler.

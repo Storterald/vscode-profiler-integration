@@ -3,10 +3,10 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import * as sqlite from "sqlite";
+import * as utils from "../utils";
 import * as sqlite3 from "sqlite3";
-import { pack, unpack } from "../utils";
 import { ExtensionContext } from "vscode";
-import { IProfiler, StackFrame } from "../iprofiler";
+import { IProfiler, ProfilerOutput, StackFrame } from "../iprofiler";
 
 interface CallstackFrame {
         callstackId: string;
@@ -15,7 +15,7 @@ interface CallstackFrame {
 }
 
 export class AMDuProf implements IProfiler {
-        public async profile(context: vscode.ExtensionContext, exePath: string): Promise<StackFrame | undefined> {
+        public async profile(context: vscode.ExtensionContext, exePath: string): Promise<ProfilerOutput | undefined> {
                 const cli: string | undefined = await this.cli();
                 if (!cli)
                         return;
@@ -29,18 +29,6 @@ export class AMDuProf implements IProfiler {
                         return await this._run(context, cli, cwd, outDir, exePath);
                 } finally {
                         fs.rmSync(outDir, { recursive: true, force: true });
-                }
-        }
-
-        public async parse(context: vscode.ExtensionContext, vscprof: string): Promise<StackFrame | undefined> {
-                const database = await unpack(vscprof, "cpu.db");
-                if (!database)
-                        return;
-
-                try {
-                        return await this._getRoot(context, database);
-                } finally {
-                        fs.rmSync(path.dirname(database), { recursive: true, force: true });
                 }
         }
 
@@ -59,8 +47,8 @@ export class AMDuProf implements IProfiler {
                 return cli;
         }
 
-        private async _run(context: ExtensionContext, cli: string, cwd: string, outDir: string, exePath: string): Promise<StackFrame | undefined> {
-                let root: StackFrame | undefined           = undefined;
+        private async _run(context: ExtensionContext, cli: string, cwd: string, outDir: string, exePath: string): Promise<ProfilerOutput | undefined> {
+                let output: ProfilerOutput | undefined     = undefined;
                 let translateTask: vscode.Task | undefined = undefined;
                 let dir: string | undefined                = undefined;
                 let done: boolean                          = false;
@@ -107,19 +95,24 @@ export class AMDuProf implements IProfiler {
                                 return;
 
                         translateDisposable.dispose();
-                        const cpu = path.join(dir!, "cpu.db");
-                        root = await this._getRoot(context, cpu);
+                        if (e.exitCode !== 0) {
+                                vscode.window.showErrorMessage("Profiler error. Not generating output.");
+                                done = true;
+                                return;
+                        }
 
-                        await pack(context, cpu);
+                        output = await this._getRoot(context, path.join(dir!, "cpu.db"), path.basename(exePath));
+
+                        await utils.pack(context, output);
                         done = true;
                 });
 
                 await vscode.tasks.executeTask(runTask);
 
-                return new Promise<StackFrame | undefined>((resolve) => {
+                return new Promise<ProfilerOutput | undefined>((resolve) => {
                         const checkCompletion = () => {
                                 if (done)
-                                        resolve(root);
+                                        resolve(output);
                         }
 
                         const interval = setInterval(() => {
@@ -162,36 +155,48 @@ export class AMDuProf implements IProfiler {
                 }
         }
 
-        private async _getRoot(context: vscode.ExtensionContext, cpuDbPath: string): Promise<StackFrame> {
+        private async _getRoot(context: vscode.ExtensionContext, cpuDbPath: string, exeName: string): Promise<ProfilerOutput> {
                 const db = await sqlite.open({ filename: cpuDbPath, driver: sqlite3.Database, mode: sqlite3.OPEN_READONLY });
                 const functions = await this._getFunctions(context, db);
                 const callstack = await this._getCallstack(context, db);
                 const functionModules = await this._getFunctionModules(context, db);
                 const callstackWeights = await this._getCallstackWeights(context, db);
+                await db.close();
 
-                const root: StackFrame = { name: "[ROOT]", value: 0, children: [] };
+                const root: ProfilerOutput = {
+                        exeName: exeName,
+                        type: "s",
+                        stackFrame: {
+                                name: "all",
+                                value: 0,
+                                children: []
+                        }
+                };
 
                 for (const frames of callstack.values()) {
                         frames.sort((a, b) => b.depth - a.depth); // leaf first
 
-                        // Use the merging/folding logic: start at the root and follow frames;
-                        // if a function already exists in the branch, use it (simulate a return).
-                        let currentNode = root;
+                        let currentNode: StackFrame = root.stackFrame;
                         for (const frame of frames) {
-                                let functionName = functions.get(frame.functionId);
-                                if (!functionName) {
+                                let name: string | undefined = functions.get(frame.functionId);
+                                if (!name) {
                                         const moduleName = functionModules.get(frame.functionId);
                                         const functionHex = frame.functionId.toString(16);
-                                        functionName = moduleName ? `${moduleName}!:0x${functionHex}` : `unknown!:0x${functionHex}`;
+                                        name = moduleName ?
+                                                `${moduleName}!:0x${functionHex}` :
+                                                `unknown!:0x${functionHex}`;
                                 }
 
-                                let childNode = currentNode.children.find(n => n.name === functionName);
-                                if (childNode) {
+                                let childNode: StackFrame | undefined;
+                                if ((childNode = currentNode.children.find(n => n.name === name))) {
                                         currentNode = childNode;
                                 } else {
-                                        childNode = { name: functionName, value: 0, children: [] };
-                                        currentNode.children.push(childNode);
-                                        currentNode = childNode;
+                                        let s = currentNode.children.push({
+                                                name: name,
+                                                value: 0,
+                                                children: []
+                                        });
+                                        currentNode = currentNode.children[s - 1];
                                 }
                         }
 
@@ -210,9 +215,8 @@ export class AMDuProf implements IProfiler {
                         node.value = node.children.reduce((acc, child) => acc + aggregateValues(child), node.value);
                         return node.value;
                 }
-                aggregateValues(root);
+                aggregateValues(root.stackFrame);
 
-                db.close();
                 return root;
         }
 

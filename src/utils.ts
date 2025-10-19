@@ -1,44 +1,36 @@
-import * as os from "os";
 import * as fs from "fs";
+import * as zip from "zlib";
 import * as path from "path";
-import * as zip from "zip-lib";
 import * as vscode from "vscode";
+import { ProfilerOutput } from "./iprofiler";
 
-export async function pack(context: vscode.ExtensionContext, cpuDb: string): Promise<string | undefined> {
+export async function pack(context: vscode.ExtensionContext, data: ProfilerOutput): Promise<void> {
         function getFormattedTime(): string {
                 return new Date().toISOString().replace("T", "_").replace(/:/g, '-').replace(/\..+/, "");
         }
 
-        const archive    = path.join(context.extensionPath, "cached", `${path.basename(cpuDb)}.zip`);
-        const outputPath = path.join(context.extensionPath, "cached", `${getFormattedTime()}.vscprof`);
+        const dir: string = path.join(context.extensionPath, "cached")
+        if (!fs.existsSync(dir))
+                fs.mkdirSync(dir);
 
+        const outputPath: string = path.join(dir, `${getFormattedTime()}.vscprof`);
         try {
-                await zip.archiveFile(cpuDb, archive);
-                await fs.promises.rename(archive, outputPath);
-                return outputPath;
+                let buf: Buffer = zip.gzipSync(Buffer.from(JSON.stringify(data), "utf-8"));
+                fs.writeFileSync(outputPath, buf, "binary");
         } catch (err) {
-                vscode.window.showErrorMessage("Error saving the profiled session.");
+                await vscode.window.showErrorMessage("Error saving the profiled session.");
                 console.error(err);
-                return;
+
+                if (fs.existsSync(outputPath))
+                        fs.rmSync(outputPath);
         }
 }
 
-export async function unpack(vscprof: string, filename: string): Promise<string | undefined> {
-        const name    = path.parse(vscprof).name;
-        const archive = path.join(os.tmpdir(), name + ".zip");
-        const dir     = path.join(os.tmpdir(), name);
-
+export async function unpack(vscprof: Buffer): Promise<ProfilerOutput | undefined> {
         try {
-                await fs.promises.copyFile(vscprof, archive);
-                await zip.extract(archive, dir);
-
-                return path.join(dir, filename);
+                return JSON.parse(zip.gunzipSync(vscprof).toString("utf-8"));
         } catch (err) {
-                vscode.window.showErrorMessage("Error loading the profiled session.");
+                await vscode.window.showErrorMessage("Error loading the profiled session.");
                 console.error(err);
-                return;
-        } finally {
-                if (fs.existsSync(archive))
-                        await fs.promises.rm(archive);
         }
 }

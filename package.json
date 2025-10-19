@@ -30,6 +30,32 @@
         }
       }
     },
+    "colors": [
+      {
+        "id": "profiler.integration.flamegraph.rootColor",
+        "defaults": {
+          "dark": "#00000000",
+          "light": "#00000000"
+        },
+        "description": "Flamegraph root color"
+      },
+      {
+        "id": "profiler.integration.flamegraph.nodeColor",
+        "defaults": {
+          "dark": "#00000000",
+          "light": "#00000000"
+        },
+        "description": "Flamegraph node color"
+      },
+      {
+        "id": "profiler.integration.flamegraph.foreground",
+        "defaults": {
+          "dark": "#00000000",
+          "light": "#00000000"
+        },
+        "description": "Flamegraph node foreground color"
+      }
+    ],
     "commands": [
       {
         "command": "profiler.profile-project",
@@ -69,13 +95,14 @@
   "devDependencies": {
     "@types/node": "^22.7.5",
     "@types/vscode": "^1.0.0",
+    "@types/which": "^3.0.4",
     "esbuild": "^0.25.1",
     "typescript": "^5.6.3"
   },
   "dependencies": {
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
-    "zip-lib": "^1.0.5"
+    "which": "^5.0.0"
   },
   "repository": {
     "url": "https://github.com/Storterald/vscode-profiler-integration"

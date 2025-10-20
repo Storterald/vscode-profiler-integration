@@ -176,8 +176,22 @@ function renderFlamegraph(output) {
                 });
 
                 element.addEventListener("mousemove", (e) => {
-                        tooltip.style.left = `${e.clientX + 15}px`;
-                        tooltip.style.top  = `${e.clientY - 10}px`;
+                        const rect = mainElement.getBoundingClientRect();
+                        if (rect.right - e.clientX < rect.width * 0.5) {
+                                tooltip.style.right = `${rect.width - e.clientX + 15}px`;
+                                tooltip.style.left  = "";
+                        } else {
+                                tooltip.style.left  = `${e.clientX + 15}px`;
+                                tooltip.style.right = "";
+                        }
+
+                        if (rect.bottom - e.clientY < rect.height * 0.2) {
+                                tooltip.style.bottom = `${rect.height - e.clientY + 10}px`
+                                tooltip.style.top     = ""
+                        } else {
+                                tooltip.style.top    = `${e.clientY - 10}px`;
+                                tooltip.style.bottom = ""
+                        }
                 });
 
                 element.addEventListener("mouseleave", () => {
@@ -195,18 +209,7 @@ function renderFlamegraph(output) {
         mainElement.appendChild(graph);
 }
 
-
 function renderCallTree(output) {
-        const tree = document.createElement("ul");
-        tree.className = "calltree";
-
-        mainElement.style.cssText = `
-                overflow-y: scroll;
-                overflow-x: hidden;
-        `;
-
-        const root = output.stackFrame;
-
         function createListElement(node, rootValue) {
                 const li = document.createElement("li");
                 li.className = "calltree-item";
@@ -249,27 +252,35 @@ function renderCallTree(output) {
                 parent.appendChild(element);
         }
 
-        addNode(root, tree, root.value);
-        mainElement.appendChild(tree);
+        mainElement.style.cssText = `
+                overflow-y: scroll;
+                overflow-x: hidden;
+        `;
 
-        // Using a single event listener for the whole tree, a tree usually has
-        // thousands of elements, and it would be inefficient to have one
-        // listener for each one of them.
-        tree.addEventListener("click", e => {
-                const chevron = e.target.closest(".calltree-item-chevron");
-                if (!chevron)
-                        return;
+        const root = output.stackFrame;
+        root.children.forEach(node => {
+                const tree = document.createElement("ul");
+                tree.className = "calltree";
 
-                const li = chevron.parentElement.parentElement;
-                const ul = li.querySelector("ul");
+                addNode(node, tree, root.value);
+                mainElement.appendChild(tree);
 
-                if (ul.style.display === "none") {
-                        chevron.setAttribute("aria-expanded", "true");
-                        ul.style.display = "";
-                } else {
-                        chevron.setAttribute("aria-expanded", "false");
-                        ul.style.display = "none";
-                }
+                tree.addEventListener("click", e => {
+                        const chevron = e.target.closest(".calltree-item-chevron");
+                        if (!chevron)
+                                return;
+
+                        const li = chevron.parentElement.parentElement;
+                        const ul = li.querySelector("ul");
+
+                        if (ul.style.display === "none") {
+                                chevron.setAttribute("aria-expanded", "true");
+                                ul.style.display = "";
+                        } else {
+                                chevron.setAttribute("aria-expanded", "false");
+                                ul.style.display = "none";
+                        }
+                });
         });
 }
 
@@ -304,18 +315,18 @@ function renderMethodList(output) {
         samplesText.textContent = "Samples";
         samples.appendChild(samplesText);
 
-        const functions = [];
+        const nodes = [];
 
         function addNode(node) {
-                functions.push({ name: node.name, value: node.value });
+                nodes.push({ name: node.name, value: node.value });
                 if (node.children)
                         node.children.forEach(addNode);
         }
 
-        addNode(root);
-        functions.sort((a, b) => b.value - a.value);
+        root.children.forEach(addNode);
+        nodes.sort((a, b) => b.value - a.value);
 
-        functions.forEach(node => {
+        nodes.forEach(node => {
                 const div = document.createElement("div");
                 div.className = "method";
 
@@ -327,10 +338,10 @@ function renderMethodList(output) {
                 bar.className = "method-bar";
                 div.appendChild(bar);
 
-                const hue = getColorHue(node.value, root.value);
+                const hue = getColorHue(node.value, nodes[0].value);
                 const bg = document.createElement("div");
-                bg.className = "method-bar-bg";
-                bg.style.width = `${(node.value / root.value) * 100}%`;
+                bg.className        = "method-bar-bg";
+                bg.style.width      = `${(node.value / nodes[0].value) * 100}%`;
                 bg.style.background = `hsl(${hue}, 100%, 50%)`;
                 bar.appendChild(bg);
 

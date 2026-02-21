@@ -9,8 +9,8 @@ for color mappings.
 
 ## Supported Profilers
 
- - `perf` *(linux)*
- - `AMD uProf` *(windows)*
+ - `perf` *(Linux)*
+ - `AMD uProf` *(Windows)*
 
 # Webview
 

@@ -1,9 +1,9 @@
 {
   "name": "vscode-profiler-integration",
   "displayName": "VSCode Profiler Integration",
-  "description": "AMD uProf profiler integration for VSCode.",
+  "description": "Profilers integration for VSCode.",
   "version": "1.0.0",
-  "publisher": "Storterald",
+  "publisher": "storto",
   "engines": {
     "vscode": "^1.0.0"
   },

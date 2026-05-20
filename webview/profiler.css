@@ -31,7 +31,7 @@ body {
     align-items: center;
     height: 30px;
     padding-left: 1px;
-    margin-top: 1px;
+    background-color: var(--vscode-tab-inactiveBackground);
 }
 
 .titlebar-tab.active {
@@ -47,6 +47,7 @@ body {
     display: flex;
     flex-direction: column;
     cursor: pointer;
+    margin-top: 2px;
     height: 100%;
     justify-content: center;
     color: var(--vscode-tab-inactiveForeground);
@@ -55,6 +56,7 @@ body {
 
 .titlebar-tab-fill {
     flex-grow: 1;
+    margin-top: 2px;
     height: 100%;
     border-bottom: 2px solid var(--vscode-editorGroupHeader-tabsBorder);
 }

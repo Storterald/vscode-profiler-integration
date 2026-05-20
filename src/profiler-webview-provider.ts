@@ -14,7 +14,7 @@ export class ProfilerWebviewProvider implements vscode.WebviewViewProvider {
                 this._ctx = context;
         }
 
-        public async resolveWebviewView(webviewView: vscode.WebviewView) {
+        public async resolveWebviewView(webviewView: vscode.WebviewView): Promise<void> {
                 this._view = webviewView;
 
                 webviewView.webview.options = {
@@ -24,7 +24,7 @@ export class ProfilerWebviewProvider implements vscode.WebviewViewProvider {
 
                 webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-                webviewView.webview.onDidReceiveMessage(async (data) => {
+                webviewView.webview.onDidReceiveMessage(async (data): Promise<void> => {
                         switch (data.type) {
                         case "ready":
                                 if (this._pendingData)
@@ -34,11 +34,14 @@ export class ProfilerWebviewProvider implements vscode.WebviewViewProvider {
                                 if ((this._pendingData = await utils.unpack(Buffer.from(data.content))))
                                         await this.updateFlamegraph(this._pendingData);
                                 break;
+                        case "invalid":
+                                await vscode.window.showErrorMessage("Error obtaining profiler output.");
+                                break;
                         }
                 });
         }
 
-        public async updateFlamegraph(data: ProfilerOutput) {
+        public async updateFlamegraph(data: ProfilerOutput): Promise<void> {
                 this._pendingData = data;
                 
                 if (this._view)

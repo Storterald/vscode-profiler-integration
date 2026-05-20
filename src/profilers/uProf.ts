@@ -1,5 +1,4 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import * as sqlite from "sqlite";
@@ -15,21 +14,26 @@ interface CallstackFrame {
 }
 
 export class AMDuProf implements IProfiler {
-        public async profile(context: vscode.ExtensionContext, exePath: string): Promise<ProfilerOutput | undefined> {
-                const cli: string | undefined = await this.cli();
-                if (!cli)
+        public async profile(context: ExtensionContext, cli: string, cwd: string, outDir: string, exePath: string): Promise<ProfilerOutput | undefined> {
+                let ok: boolean = await utils.runCommandTask(
+                        "Profile and application", this._getProfileCommand(cli, cwd, outDir, exePath),
+                        "Profiler error. Not generating output.");
+                if (!ok)
+                        return undefined;
+
+                const dir: string | undefined = this._getFirstChildDirectory(outDir);
+                if (!dir) {
+                        vscode.window.showErrorMessage("Profiler did not generate any output.");
                         return;
-
-                const cwd: string    = path.dirname(exePath);
-                const outDir: string = fs.mkdtempSync(path.join(os.tmpdir(), "uprof-"));
-
-                console.info(`Profiling: '${exePath}', cwd: '${cwd}'`)
-
-                try {
-                        return await this._run(context, cli, cwd, outDir, exePath);
-                } finally {
-                        fs.rmSync(outDir, { recursive: true, force: true });
                 }
+
+                ok = await utils.runCommandTask(
+                        "Translate Profiler Output", this._getTranslateCommand(cli, cwd, dir),
+                        "Profiler error. Not generating output.");
+                if (!ok)
+                        return undefined;
+
+                return await this._getRoot(context, path.join(dir!, "cpu.db"), path.basename(exePath));
         }
 
         public async cli(): Promise<string | undefined> {
@@ -45,83 +49,6 @@ export class AMDuProf implements IProfiler {
                 }
 
                 return cli;
-        }
-
-        private async _run(context: ExtensionContext, cli: string, cwd: string, outDir: string, exePath: string): Promise<ProfilerOutput | undefined> {
-                let output: ProfilerOutput | undefined     = undefined;
-                let translateTask: vscode.Task | undefined = undefined;
-                let dir: string | undefined                = undefined;
-                let done: boolean                          = false;
-
-                const runTask = new vscode.Task(
-                        { type: "shell" },
-                        vscode.TaskScope.Workspace,
-                        "Profile an application",
-                        "VSCode Profiler Integration",
-                        new vscode.ShellExecution(this._getProfileCommand(cli, cwd, outDir, exePath))
-                );
-
-                const runDisposable = vscode.tasks.onDidEndTaskProcess(async (e) => {
-                        if (e.execution.task !== runTask)
-                                return;
-
-                        runDisposable.dispose();
-                        if (e.exitCode !== 0) {
-                                vscode.window.showErrorMessage("Profiler error. Not generating output.");
-                                done = true;
-                                return;
-                        }
-
-                        dir = this._getFirstChildDirectory(outDir);
-                        if (!dir) {
-                                vscode.window.showErrorMessage("Profiler did not generate any output.");
-                                done = true;
-                                return;
-                        }
-
-                        translateTask = new vscode.Task(
-                                { type: "shell" },
-                                vscode.TaskScope.Workspace,
-                                "Translate Profiler Output",
-                                "VSCode Profiler Integration",
-                                new vscode.ShellExecution(this._getTranslateCommand(cli, cwd, dir))
-                        );
-
-                        await vscode.tasks.executeTask(translateTask);
-                });
-
-                const translateDisposable = vscode.tasks.onDidEndTaskProcess(async (e) => {
-                        if (!translateTask || e.execution.task !== translateTask)
-                                return;
-
-                        translateDisposable.dispose();
-                        if (e.exitCode !== 0) {
-                                vscode.window.showErrorMessage("Profiler error. Not generating output.");
-                                done = true;
-                                return;
-                        }
-
-                        output = await this._getRoot(context, path.join(dir!, "cpu.db"), path.basename(exePath));
-
-                        await utils.pack(context, output);
-                        done = true;
-                });
-
-                await vscode.tasks.executeTask(runTask);
-
-                return new Promise<ProfilerOutput | undefined>((resolve) => {
-                        const checkCompletion = () => {
-                                if (done)
-                                        resolve(output);
-                        }
-
-                        const interval = setInterval(() => {
-                                checkCompletion();
-                                if (done)
-                                        clearInterval(interval);
-
-                        }, 100);
-                })
         }
 
         private _getProfileCommand(cli: string, cwd: string, outDir: string, exePath: string): string {
@@ -206,17 +133,7 @@ export class AMDuProf implements IProfiler {
                         currentNode.value += sampleWeight;
                 }
 
-                // Now propagate (aggregate) the leaf counts upward.
-                // This aggregation sets a parent’s value to the sum of its children plus its own value.
-                function aggregateValues(node: StackFrame): number {
-                        if (node.children.length === 0)
-                                return node.value;
-
-                        node.value = node.children.reduce((acc, child) => acc + aggregateValues(child), node.value);
-                        return node.value;
-                }
-                aggregateValues(root.stackFrame);
-
+                utils.updateNodeValues(root.stackFrame);
                 return root;
         }
 

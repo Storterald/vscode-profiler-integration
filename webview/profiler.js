@@ -1,8 +1,8 @@
-const vscode = acquireVsCodeApi();
+const vscode      = acquireVsCodeApi();
 const mainElement = document.querySelector(".main");
-const tooltip = document.querySelector(".tooltip");
+const tooltip     = document.querySelector(".tooltip");
 
-// Jetbrains chevrons. Apache 2.0 license.
+// JetBrains chevrons. Apache 2.0 license.
 const chevrons = `
 <div class="calltree-item-chevron" aria-expanded="true">
         <svg class="chevron-down" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -14,22 +14,19 @@ const chevrons = `
 </div>`;
 
 let currentData = null;
-let currentView= "flame";
+let currentView = "flame";
 
-document.querySelectorAll(".titlebar-button").forEach(button => {
-        button.addEventListener("click", () => {
-                if (button.classList.contains("active"))
+document.querySelectorAll(".titlebar-tab").forEach(tab => {
+        tab.addEventListener("click", () => {
+                if (tab.classList.contains("active"))
                         return;
 
-                document.querySelectorAll(".titlebar-button").forEach(b => {
-                        b.classList.remove("active");
-                        b.querySelector(".titlebar-button-border").classList.remove("active");
+                document.querySelectorAll(".titlebar-tab").forEach(tab => {
+                        tab.classList.remove("active");
                 });
 
-                button.classList.add("active");
-                button.querySelector(".titlebar-button-border").classList.add("active");
-
-                currentView = button.dataset.view;
+                tab.classList.add("active");
+                currentView = tab.dataset.view;
                 if (currentData)
                         renderCurrentView();
         });
@@ -359,6 +356,7 @@ window.addEventListener("message", event => {
                 renderCurrentView();
         } else {
                 console.error("[Webview] Invalid data format:", event.data);
+                vscode.postMessage({ type: "invalid" });
         }
 });
 

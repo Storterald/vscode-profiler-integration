@@ -31,32 +31,37 @@ body {
     align-items: center;
     height: 30px;
     padding-left: 1px;
-    border-bottom: 2px solid var(--vscode-editorGroupHeader-border);
+    margin-top: 1px;
 }
 
-.titlebar-button {
+.titlebar-tab.active {
+    color: var(--vscode-tab-activeForeground);
+    background-color: var(--vscode-tab-activeBackground);
+    border-left: 1px solid var(--vscode-editorGroupHeader-tabsBorder);
+    border-right: 1px solid var(--vscode-editorGroupHeader-tabsBorder);
+    border-top: 1px solid var(--vscode-tab-activeBorderTop);
+    border-bottom-color: var(--vscode-editorGroupHeader-noTabsBackground);
+}
+
+.titlebar-tab {
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
     cursor: pointer;
-    color: var(--vscode-foreground);
+    height: 100%;
+    justify-content: center;
+    color: var(--vscode-tab-inactiveForeground);
+    border-bottom: 2px solid var(--vscode-editorGroupHeader-tabsBorder);
 }
 
-.titlebar-button-text {
+.titlebar-tab-fill {
+    flex-grow: 1;
+    height: 100%;
+    border-bottom: 2px solid var(--vscode-editorGroupHeader-tabsBorder);
+}
+
+.titlebar-tab-text {
     padding: 0px 10px;
     margin: 0px;
-}
-
-.titlebar-button-border {
-    position: relative;
-    height: 4px;
-    bottom: -7px;
-    background: transparent;
-    border-radius: 0.5rem;
-}
-
-.titlebar-button-border.active {
-    background: var(--vscode-tab-activeBorder);
 }
 
 .main {
@@ -76,12 +81,13 @@ body {
     border: 2px solid var(--vscode-editorGroup-border);
     background: var(--vscode-activityBarBadge-background);
     font-family: var(--vscode-font-family);
+    color: white;
 }
 
 .input-label svg {
     width: 16px;
     padding: 0px 3px;
-    fill: var(--vscode-icon-foreground);
+    fill: white;
 }
 
 .input-label p {

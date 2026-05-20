@@ -11,12 +11,13 @@ for color mappings.
 
  - `perf` *(Linux)*
  - `AMD uProf` *(Windows)*
+ - `Intel VTune` *(Windows)*
 
 # Webview
 
 ## Flame graph
 
-![flame-graph](./resources/flame-graph.png)
+![flame-graph](resources/flame-graph.png)
 
 Colors:
  - `profiler.integration.flamegraph.rootColor`: Color of the **'all'** node.
@@ -28,14 +29,14 @@ Colors:
 
 # Call tree
 
-![call-tree](./resources/call-tree.png)
+![call-tree](resources/call-tree.png)
 
 Colors:
  - TODO
 
 # Method list
 
-![method-list](./resources/method-list.png)
+![method-list](resources/method-list.png)
 
 Colors:
  - TODO

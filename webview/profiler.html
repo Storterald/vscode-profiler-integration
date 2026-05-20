@@ -10,18 +10,16 @@
   <body>
     <div class="editor">
       <div class="titlebar">
-        <div class="titlebar-button" data-view="flame">
-          <p class="titlebar-button-text">Flame Graph</p>
-          <div class="titlebar-button-border active"></div>
+        <div class="titlebar-tab active" data-view="flame" style="border-left: none">
+          <p class="titlebar-tab-text">Flame Graph</p>
         </div>
-        <div class="titlebar-button" data-view="calltree">
-          <p class="titlebar-button-text">Call Tree</p>
-          <div class="titlebar-button-border"></div>
+        <div class="titlebar-tab" data-view="calltree">
+          <p class="titlebar-tab-text">Call Tree</p>
         </div>
-        <div class="titlebar-button" data-view="methods">
-          <p class="titlebar-button-text">Method List</p>
-          <div class="titlebar-button-border"></div>
+        <div class="titlebar-tab" data-view="methods">
+          <p class="titlebar-tab-text">Method List</p>
         </div>
+        <div class="titlebar-tab-fill"></div>
       </div>
       <div class="main" style="display: flex; align-items: center; justify-content: center; flex-direction: column;">
         <label class="input-label" for="load-vscprof">

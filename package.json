@@ -27,6 +27,10 @@
         "vscode.profiler.integration.uProfCLIPath": {
           "type": "string",
           "description": "Full path to the AMD uProf CLI executable."
+        },
+        "vscode.profiler.integration.VTuneCLIPath": {
+          "type": "string",
+          "description": "Full path to the Intel VTune CLI executable."
         }
       }
     },
@@ -100,8 +104,9 @@
     "typescript": "^5.6.3"
   },
   "dependencies": {
+    "csv-parse": "^6.2.1",
     "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7",
+    "sqlite3": "^6.0.1",
     "which": "^5.0.0"
   },
   "repository": {

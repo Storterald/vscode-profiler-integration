@@ -6,7 +6,8 @@
 *.vsix
 
 # Build Files
-tsbuild/
+build/
+webview/build/
 node_modules/
 package-lock.json
 

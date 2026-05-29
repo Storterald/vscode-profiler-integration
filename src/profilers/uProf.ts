@@ -101,7 +101,7 @@ export class AMDuProf implements IProfiler {
                 };
 
                 for (const frames of callstack.values()) {
-                        frames.sort((a, b) => b.depth - a.depth); // leaf first
+                        frames.sort((a: CallstackFrame, b: CallstackFrame): number => b.depth - a.depth); // leaf first
 
                         let currentNode: StackFrame = root.stackFrame;
                         for (const frame of frames) {

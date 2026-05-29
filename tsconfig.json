@@ -1,22 +1,19 @@
 {
-  "compilerOptions": {
-    "module": "commonjs",
-    "target": "es2018",
-    "outDir": "tsbuild",
-    "lib": [
-      "es2018",
-      "DOM"
-    ],
-    "sourceMap": true,
-    "rootDir": "src",
-    "strict": true
+  "compilerOptions":  {
+    "sourceMap": false,
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "rootDir": ".",
+    "outDir": "build"
   },
-  "include": [
-    "src",
-    "buttons"
-  ],
-  "exclude": [
-    "node_modules",
-    "tsbuild"
+  "references": [
+    {
+      "path": "src"
+    },
+    {
+      "path": "webview"
+    }
   ]
 }

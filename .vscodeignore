@@ -5,12 +5,13 @@
 # Git
 .gitignore
 
-# Typescript
-src/**/*.ts
-tsconfig.json
+# Sources
+**/*.ts
 
 # Build Files
 build.py
+**/tsconfig.json
+**/tsconfig.tsbuildinfo
 
 # Tests
 .tests/**

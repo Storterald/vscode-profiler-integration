@@ -1,6 +1,6 @@
 import * as fs from "fs";
+import which from "which";
 import * as path from "path";
-import * as which from "which";
 import * as vscode from "vscode";
 import * as utils from "../utils";
 import { ExtensionContext } from "vscode";

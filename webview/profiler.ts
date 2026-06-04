@@ -98,6 +98,84 @@ function getColorHue(value: number, rootValue: number): number {
         return 40 - (40 * intensity);
 }
 
+let isResizing = false;
+function resizableGrid(elParent: HTMLElement): void {
+        function elNew(tag: string, prop = {}): HTMLElement {
+                return Object.assign(document.createElement(tag), prop);
+        }
+
+        const elsPanes = elParent.querySelectorAll(":scope > .pane");
+
+        // @ts-ignore
+        let fr: number[] = [...elsPanes].map((elPane: HTMLElement): number => {
+                // @ts-ignore
+                return parseFloat(elPane.dataset.fr || 1 / elsPanes.length);
+        });
+        let elPaneCurr: HTMLElement | null = null;
+        let paneIndex: number              = -1;
+        let frStart: number                = 0;
+        let frNext: number                 = 0;
+
+        function frToCSS(): void {
+                // @ts-ignore
+                elParent.style["grid-template-columns"] = fr.join("fr ") + "fr";
+        }
+
+        function pointerDown(e: MouseEvent): void {
+                if (!e.target || !e.currentTarget)
+                        return;
+
+                if (isResizing || !(e.target as HTMLElement).closest(".gutter"))
+                        return;
+
+                isResizing = true;
+
+                elParent.classList.add("is-resizing");
+                elPaneCurr = (e.currentTarget as HTMLElement).previousElementSibling as (HTMLElement | null);
+                // @ts-ignore
+                fr         = [...elsPanes].map((elPane) => elPane.clientWidth / elParent.clientWidth);
+                // @ts-ignore
+                paneIndex  = [...elsPanes].indexOf(elPaneCurr);
+                frStart    = fr[paneIndex];
+                frNext     = fr[paneIndex + 1];
+                addEventListener("pointermove", pointerMove);
+                addEventListener("pointerup", pointerUp);
+        }
+
+        function pointerMove(e: MouseEvent): void {
+                e.preventDefault();
+
+                const paneBCR = elPaneCurr!.getBoundingClientRect();
+                const parentSize = elParent.clientWidth;
+                const pointer = {
+                        x: Math.max(0, Math.min(e.clientX - paneBCR.left, elParent.clientWidth)),
+                        y: Math.max(0, Math.min(e.clientY - paneBCR.top, elParent.clientHeight))
+                };
+                const frRel: number  = pointer["x"] / parentSize;
+                const frDiff: number = frStart - frRel;
+                fr[paneIndex]        = Math.max(0.05, frRel);
+                fr[paneIndex + 1]    = Math.max(0.05, frNext + frDiff);
+                frToCSS();
+                elPaneCurr!.dispatchEvent(new Event("resize"));
+        }
+
+        function pointerUp(_: MouseEvent): void {
+                removeEventListener("pointermove", pointerMove);
+                removeEventListener("pointerup", pointerUp);
+                isResizing = false;
+                elParent.classList.remove("is-resizing");
+        }
+
+        // @ts-ignore
+        [...elsPanes].slice(1).forEach((elPane: HTMLElement): void => {
+                elPane.append(elNew("span", { className: "gutter" }));
+                elPane.addEventListener("pointerdown", pointerDown);
+        });
+
+        frToCSS();
+        window.dispatchEvent(new Event("resize"));
+}
+
 function renderFlamegraph(output: ProfilerOutput): void {
         interface FlameNode {
                 name: string;
@@ -287,13 +365,16 @@ function renderCallTree(output: ProfilerOutput): void {
                 parent.appendChild(element);
         }
 
+        const treeRoot: HTMLElement = document.createElement("div");
+        mainElement.appendChild(treeRoot);
+
         const root: StackFrame = output.stackFrame;
         root.children.forEach((node: StackFrame): void => {
                 const tree: HTMLUListElement = document.createElement("ul");
                 tree.className               = "calltree";
 
                 addNode(node, tree);
-                mainElement.appendChild(tree);
+                treeRoot.appendChild(tree);
 
                 tree.addEventListener("click", (e: PointerEvent): void => {
                         const chevron: HTMLDivElement | undefined = (e.target! as HTMLElement | undefined)?.closest(".calltree-item-chevron")!;
@@ -322,25 +403,27 @@ function renderMethodList(output: ProfilerOutput): void {
 
         const root: StackFrame = output.stackFrame;
 
-        const titlebar: HTMLDivElement = document.createElement("div");
-        titlebar.className             = "methods-titlebar";
-        mainElement.appendChild(titlebar);
+        const grid: HTMLDivElement = document.createElement("div");
+        grid.className             = "panes methods";
+        mainElement.appendChild(grid);
 
-        const method: HTMLDivElement = document.createElement("div");
-        method.style.width           = "50%";
-        titlebar.appendChild(method);
+        const names: HTMLElement = document.createElement("div");
+        names.className          = "pane";
+        grid.appendChild(names);
+
+        const samplesCount: HTMLElement = document.createElement("div");
+        samplesCount.className          = "pane";
+        grid.appendChild(samplesCount);
+
+        resizableGrid(grid);
 
         const methodText: HTMLDivElement = document.createElement("p");
         methodText.textContent           = "Method";
-        method.appendChild(methodText);
+        names.appendChild(methodText);
 
-        const samples: HTMLDivElement = document.createElement("div");
-        samples.style.width           = "20%";
-        titlebar.appendChild(samples);
-
-        const samplesText: HTMLDivElement = document.createElement("p");
-        samplesText.textContent           = "Samples";
-        samples.appendChild(samplesText);
+        const sampleText: HTMLDivElement = document.createElement("p");
+        sampleText.textContent           = "Samples";
+        samplesCount.appendChild(sampleText);
 
         const nodes: Method[] = [];
         function addNode(node: StackFrame): void {
@@ -353,24 +436,19 @@ function renderMethodList(output: ProfilerOutput): void {
         nodes.sort((a: Method, b: Method): number => b.value - a.value);
 
         nodes.forEach((node: Method): void => {
-                const div: HTMLDivElement = document.createElement("div");
-                div.className             = "method";
-
                 const name: HTMLParagraphElement = document.createElement("p");
                 name.textContent                 = node.name;
-                div.appendChild(name);
+                names.appendChild(name);
 
                 const bar: HTMLDivElement = document.createElement("div");
                 bar.className             = "method-bar";
-                div.appendChild(bar);
+                samplesCount.appendChild(bar);
 
                 const bg: HTMLDivElement = document.createElement("div");
                 bg.className             = "method-bar-bg";
                 bg.style.width           = `${(node.value / nodes[0].value) * 100}%`;
                 bg.style.background      = `hsl(${getColorHue(node.value, nodes[0].value)}, 100%, 50%)`;
                 bar.appendChild(bg);
-
-                mainElement.appendChild(div);
         });
 }
 

@@ -15,6 +15,14 @@ body {
     border-top: 1px solid var(--vscode-editorGroup-border);
 }
 
+#main {
+    flex: 1;
+}
+
+/*
+    ----- SIDEBAR -----
+*/
+
 .sidebar {
     width: 3%;
     min-width: 30px;
@@ -28,6 +36,10 @@ body {
     flex-direction: column;
     height: 100%;
 }
+
+/*
+    ----- TITLEBAR -----
+*/
 
 .titlebar {
     display: flex;
@@ -65,13 +77,13 @@ body {
 }
 
 .titlebar-tab-text {
-    padding: 0px 10px;
-    margin: 0px;
+    padding: 0 10px;
+    margin: 0;
 }
 
-#main {
-    flex: 1;
-}
+/*
+    ----- FILE INPUT -----
+*/
 
 .input-label {
     display: flex;
@@ -89,18 +101,22 @@ body {
 
 .input-label svg {
     width: 16px;
-    padding: 0px 3px;
+    padding: 0 3px;
     fill: white;
 }
 
 .input-label p {
-    margin: 0px;
+    margin: 0;
 }
 
 #load-vscprof {
     opacity: 0;
     z-index: -1;
 }
+
+/*
+    ----- FLAME GRAPH -----
+*/
 
 .flame-graph-container {
     display: flex;
@@ -141,6 +157,10 @@ body {
     height: 20px;
     border-top: 2px solid var(--vscode-editorGroup-border);
 }
+
+/*
+    ----- TOOLTIP -----
+*/
 
 .tooltip {
     display: none;
@@ -190,6 +210,43 @@ body {
     font-weight: bold;
 }
 
+/*
+    ----- RESIZABLE GRID -----
+*/
+
+.panes {
+    touch-action: none;
+    display: grid;
+    overflow: hidden;
+    height: 100%;
+}
+
+.pane {
+    overflow: hidden;
+    position: relative;
+}
+
+.gutter {
+    position: absolute;
+    cursor: ew-resize;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 1;
+    transition: background 0.2s;
+    background: var(--vscode-widget-border);
+    width: 1px;
+}
+
+.gutter:hover {
+    width: 4px;
+    background: var(--vscode-sash-hoverBorder);
+}
+
+/*
+    ----- CALL TREE -----
+*/
+
 .calltree-container {
     overflow-y: scroll;
     overflow-x: hidden;
@@ -198,7 +255,7 @@ body {
 .calltree {
     list-style: none;
     padding-left: 7px;
-    margin: 0px;
+    margin: 0;
     padding-top: 5px;
 }
 
@@ -221,7 +278,7 @@ body {
     flex-direction: row;
     align-items: center;
     gap: 6px;
-    padding: 2px 0px;
+    padding: 2px 0;
     font-weight: 200;
 }
 
@@ -247,54 +304,31 @@ body {
     font-weight: 600;
 }
 
-.methods-container {
-    display: flex;
-    flex-direction: column;
-    overflow-y: scroll;
-    font-weight: 200;
+/*
+    ----- METHODS LIST -----
+*/
+
+.methods p {
+    margin: 0;
 }
 
-.method {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    padding-left: 3px;
+.methods > .pane {
+    display: grid;
+    grid-auto-rows: 1.4rem;
 }
 
-.method p {
-    margin: 0px;
-    padding: 3px 0px;
-    width: 50%;
-    text-overflow: ellipsis;
-    overflow: hidden;
-    white-space: nowrap;
+.methods > .pane p:first-of-type {
+    border-bottom: 1px solid var(--vscode-editorGroupHeader-tabsBorder);
+    font-size: 1rem;
+    font-weight: 400;
 }
 
 .method-bar {
-    width: 20%;
-    height: calc(100% - 2px);
     align-content: center;
     background-color: var(--vscode-sideBar-background);
+    border: 1px solid var(--vscode-sideBar-background);
 }
 
 .method-bar-bg {
     height: 100%;
-}
-
-.methods-titlebar {
-    display: flex;
-    align-items: center;
-    min-height: 30px;
-    border-bottom: 1px solid var(--vscode-editorGroup-border);
-}
-
-.methods-titlebar div {
-    align-content: center;
-    height: 100%;
-    border-right: 1px solid var(--vscode-editorGroup-border);
-}
-
-.methods-titlebar p {
-    margin: 0px;
-    padding-left: 3px;
 }

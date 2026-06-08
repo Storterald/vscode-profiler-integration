@@ -2,7 +2,7 @@
   "compilerOptions": {
     "module": "commonjs",
     "target": "es2018",
-    "lib": [ "DOM" ],
+    "lib": [ "DOM", "DOM.Iterable" ],
     "composite": true,
     "sourceMap": false,
     "strict": true,

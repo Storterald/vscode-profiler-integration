@@ -49,6 +49,10 @@ body {
     background-color: var(--vscode-tab-inactiveBackground);
 }
 
+.titlebar :first-child {
+    border-left: none !important;
+}
+
 .titlebar-tab.active {
     color: var(--vscode-tab-activeForeground);
     background-color: var(--vscode-tab-activeBackground);
@@ -162,8 +166,9 @@ body {
     ----- TOOLTIP -----
 */
 
-.tooltip {
+function-tooltip {
     display: none;
+    opacity: 0;
     position: fixed;
     z-index: 1000;
     pointer-events: none;
@@ -174,18 +179,19 @@ body {
     font-size: var(--vscode-editor-font-size);
     font-weight: 500;
     box-shadow: 0 2px 8px var(--vscode-widget-shadow);
-    opacity: 0;
     transition: opacity 0.2s;
     border-radius: 3px;
 }
 
-.tooltip p {
+function-tooltip p {
     margin: 0;
 }
 
 .tooltip-fire {
-    fill: #c25452;
-    color: #c25452;
+    fill: var(--fire-color);
+    color: var(--fire-color);
+
+    --fire-color: #c25452;
 }
 
 .tooltip-time {
@@ -214,7 +220,7 @@ body {
     ----- RESIZABLE GRID -----
 */
 
-.panes {
+resizable-grid {
     touch-action: none;
     display: grid;
     overflow: hidden;
@@ -309,7 +315,8 @@ body {
 */
 
 .methods p {
-    margin: 0;
+    font-weight: 300;
+    margin: 0 0 0 0.3rem;
 }
 
 .methods > .pane {
@@ -317,18 +324,34 @@ body {
     grid-auto-rows: 1.4rem;
 }
 
-.methods > .pane p:first-of-type {
+.methods > .pane > p:first-of-type {
     border-bottom: 1px solid var(--vscode-editorGroupHeader-tabsBorder);
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: 400;
 }
 
 .method-bar {
+    position: relative;
     align-content: center;
     background-color: var(--vscode-sideBar-background);
     border: 1px solid var(--vscode-sideBar-background);
 }
 
 .method-bar-bg {
+    position: absolute;
+    bottom: 0;
+    left: 0;
     height: 100%;
+}
+
+.method-bar-text {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 100%;
+    width: 99%;
+    margin: 0 !important;
+    font-weight: 500 !important;
+    color: var(--vscode-foreground);
+    text-align: right;
 }

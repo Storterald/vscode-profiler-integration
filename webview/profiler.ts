@@ -1,29 +1,231 @@
+// @ts-ignore
+const vscode: any = acquireVsCodeApi();
+
 interface ProfilerOutput {
         exeName:    string;
         type:       string;
         stackFrame: StackFrame;
 }
 
-interface StackFrame {
+interface StackFrameBase {
         name:     string;
         value:    number;
+}
+
+interface StackFrame extends StackFrameBase {
         children: StackFrame[];
 }
 
 type View = "flame-graph" | "calltree" | "methods";
 
-// @ts-ignore
-const vscode: any = acquireVsCodeApi();
+class HTMLResizableGridElement extends HTMLElement {
+        private observer: MutationObserver | undefined;
 
-const mainElement: HTMLDivElement      = document.querySelector("#main")!;
-const tooltip: HTMLDivElement          = document.querySelector(".tooltip")!;
-const time: HTMLDivElement             = tooltip.querySelector(".tooltip-time")!;
-const funcName: HTMLParagraphElement   = tooltip.querySelector("#function-name")!;
-const flame: SVGElement                = tooltip.querySelector("#fire-icon")!;
-const value: HTMLParagraphElement      = tooltip.querySelector("#value-count-label")!;
-const absolute: HTMLParagraphElement   = tooltip.querySelector("#absolute-percentage-label")!;
-const relative: HTMLParagraphElement   = tooltip.querySelector("#relative-percentage-label")!;
-const parentName: HTMLParagraphElement = tooltip.querySelector("#parent-name")!;
+        constructor() {
+                super();
+
+                this.observer = new MutationObserver((mutations: MutationRecord[]): void => {
+                        for (const mutation of mutations)
+                                if (mutation.type === "childList")
+                                        this.updateList();
+                });
+
+                this.observer.observe(this, {
+                        childList: true
+                });
+        }
+
+        connectedCallback(): void {
+                this.setAttribute("is-resizing", "false");
+                this.updateList();
+        }
+
+        updateList(): void {
+                if (this.children.length === 0)
+                        return;
+
+                const elsPanes: NodeListOf<HTMLElement> = this.querySelectorAll(":scope > .pane");
+                let fr: number[]                        = [...elsPanes].map((elPane: HTMLElement): number => {
+                        return parseFloat(elPane.dataset.fr || (1 / elsPanes.length).toString());
+                });
+
+                let elPaneCurr: HTMLElement | null = null;
+                let paneIndex: number              = -1;
+                let frStart: number                = 0;
+                let frNext: number                 = 0;
+
+                const frToCSS = (): void => {
+                        this.style.gridTemplateColumns = fr.join("fr ") + "fr";
+                }
+
+                const pointerDown = (e: MouseEvent): void => {
+                        if (!e.target || !e.currentTarget)
+                                return;
+
+                        if (this.getAttribute("is-resizing") === "true"
+                            || !(e.target as HTMLElement).closest(".gutter"))
+                                return;
+
+                        elPaneCurr = (e.currentTarget as HTMLElement).previousElementSibling! as HTMLElement;
+                        fr         = [...elsPanes].map((elPane: HTMLElement): number => elPane.clientWidth / this.clientWidth);
+                        paneIndex  = [...elsPanes].indexOf(elPaneCurr);
+                        frStart    = fr[paneIndex];
+                        frNext     = fr[paneIndex + 1];
+
+                        this.setAttribute("is-resizing", "true");
+                        this.addEventListener("pointermove", pointerMove);
+                        this.addEventListener("pointerup", pointerUp);
+                }
+
+                const pointerMove = (e: MouseEvent): void => {
+                        e.preventDefault();
+
+                        const paneBCR: DOMRect   = elPaneCurr!.getBoundingClientRect();
+                        const parentSize: number = this.clientWidth;
+                        const pointer            = {
+                                x: Math.max(0, Math.min(e.clientX - paneBCR.left, this.clientWidth)),
+                                y: Math.max(0, Math.min(e.clientY - paneBCR.top, this.clientHeight))
+                        };
+
+                        const frRel: number  = pointer.x / parentSize;
+                        const frDiff: number = frStart - frRel;
+                        fr[paneIndex]        = Math.max(0.05, frRel);
+                        fr[paneIndex + 1]    = Math.max(0.05, frNext + frDiff);
+
+                        frToCSS();
+
+                        elPaneCurr!.dispatchEvent(new Event("resize"));
+                }
+
+                const pointerUp = (_: MouseEvent): void => {
+                        this.removeEventListener("pointermove", pointerMove);
+                        this.removeEventListener("pointerup", pointerUp);
+                        this.setAttribute("is-resizing", "false");
+                }
+
+                const elNew = (tag: string, prop = {}): HTMLElement => {
+                        return Object.assign(document.createElement(tag), prop);
+                }
+
+                const first: HTMLElement = this.children[0] as HTMLElement;
+                first.getElementsByClassName("gutter")[0]?.remove();
+                first.onpointerdown = null;
+
+                for (let i: number = 1; i < this.children.length; ++i) {
+                        const child: HTMLElement = this.children[i] as HTMLElement;
+                        if (child.getElementsByClassName("gutter").length === 0)
+                                child.append(elNew("span", { className: "gutter" }));
+                        child.onpointerdown = pointerDown;
+                }
+
+                frToCSS();
+                window.dispatchEvent(new Event("resize"));
+        }
+}
+customElements.define("resizable-grid", HTMLResizableGridElement);
+
+class HTMLFunctionTooltipElement extends HTMLElement {
+        private static tooltip: HTMLFunctionTooltipElement | undefined;
+
+        constructor() {
+                super();
+        }
+
+        connectedCallback(): void {
+                this.innerHTML = `
+<div class="tooltip-time tooltip-fire">
+        <p id="function-name" class="tooltip-function"></p>
+        <div style="flex-grow: 1"></div>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" id="fire-icon" viewBox="0 0 16 16">
+                    <path d="M8 16c3.314 0 6-2 6-5.5 0-1.5-.5-4-2.5-6 .25 1.5-1.25 2-1.25 2C11 4 9 .5 6 0c.357 2 .5 4-2 6-1.25 1-2 2.729-2 4.5C2 14 4.686 16 8 16m0-1c-1.657 0-3-1-3-2.75 0-.75.25-2 1.25-3C6.125 10 7 10.5 7 10.5c-.375-1.25.5-3.25 2-3.5-.179 1-.25 2 1 3 .625.5 1 1.364 1 2.25C11 14 9.657 15 8 15"/>
+                </svg>
+                <p id="value-count-label"></p>
+        </div>
+        <div class="tooltip-data">
+                <p id="absolute-percentage-label" class="tooltip-percentage"></p>
+                <p>of all</p>
+                <div></div>
+                <div></div>
+                <p id="relative-percentage-label" class="tooltip-percentage"></p>
+                <p>of</p>
+                <p id="parent-name" class="tooltip-function"></p>
+        </div>
+</div>`
+        }
+
+        static show(node: StackFrameBase, parent: StackFrameBase, output: ProfilerOutput): void {
+                if (!HTMLFunctionTooltipElement.tooltip)
+                        HTMLFunctionTooltipElement.tooltip = document.body.appendChild(document.createElement("function-tooltip")) as HTMLFunctionTooltipElement
+
+                const self: HTMLFunctionTooltipElement = HTMLFunctionTooltipElement.tooltip;
+
+                const absPercentage: number = (node.value / output.stackFrame.value) * 100;
+                const relPercentage: number = (node.value / parent.value) * 100;
+
+                const time: HTMLDivElement             = self.querySelector(".tooltip-time")!;
+                const funcName: HTMLParagraphElement   = self.querySelector("#function-name")!;
+                const flame: SVGElement                = self.querySelector("#fire-icon")!;
+                const value: HTMLParagraphElement      = self.querySelector("#value-count-label")!;
+                const absolute: HTMLParagraphElement   = self.querySelector("#absolute-percentage-label")!;
+                const relative: HTMLParagraphElement   = self.querySelector("#relative-percentage-label")!;
+                const parentName: HTMLParagraphElement = self.querySelector("#parent-name")!;
+
+                if (absPercentage >= 20) {
+                        time.classList.add("tooltip-fire");
+                        flame.style.display = "block";
+                } else {
+                        time.classList.remove("tooltip-fire");
+                        flame.style.display = "none";
+                }
+
+                funcName.textContent   = node.name;
+                value.textContent      = `${node.value.toFixed(2)}${output.type}`;
+                absolute.textContent   = `${absPercentage.toFixed(2)}%`;
+                relative.textContent   = `${relPercentage.toFixed(2)}%`;
+                parentName.textContent = parent.name;
+
+                self.style.opacity = "1";
+                self.style.display = "block";
+        }
+
+
+        static move(x: number, y: number): void {
+                if (!HTMLFunctionTooltipElement.tooltip)
+                        return;
+
+                const self: HTMLFunctionTooltipElement = HTMLFunctionTooltipElement.tooltip;
+
+                const rect: DOMRect = mainElement.getBoundingClientRect();
+                if (rect.right - x < rect.width * 0.5) {
+                        self.style.right = `${rect.width - x + 15}px`;
+                        self.style.left  = "";
+                } else {
+                        self.style.left  = `${x + 15}px`;
+                        self.style.right = "";
+                }
+
+                if (rect.bottom - y < rect.height * 0.2) {
+                        self.style.bottom = `${rect.height - y + 10}px`
+                        self.style.top     = ""
+                } else {
+                        self.style.top    = `${y - 10}px`;
+                        self.style.bottom = ""
+                }
+        }
+
+        static hide(): void {
+                if (!HTMLFunctionTooltipElement.tooltip)
+                        return;
+
+                const self: HTMLFunctionTooltipElement = HTMLFunctionTooltipElement.tooltip;
+
+                self.style.opacity = "0";
+                self.style.display = "none";
+        }
+}
+customElements.define("function-tooltip", HTMLFunctionTooltipElement);
+
+const mainElement: HTMLDivElement = document.querySelector("#main")!;
 
 // JetBrains chevrons. Apache 2.0 license.
 const chevrons: string = `
@@ -94,92 +296,12 @@ function renderCurrentView(): void {
 }
 
 function getColorHue(value: number, rootValue: number): number {
-        const intensity = Math.min(0.8, (0.6 * value) / rootValue + 0.3);
+        const intensity: number = Math.min(0.8, (0.6 * value) / rootValue + 0.3);
         return 40 - (40 * intensity);
 }
 
-let isResizing = false;
-function resizableGrid(elParent: HTMLElement): void {
-        function elNew(tag: string, prop = {}): HTMLElement {
-                return Object.assign(document.createElement(tag), prop);
-        }
-
-        const elsPanes = elParent.querySelectorAll(":scope > .pane");
-
-        // @ts-ignore
-        let fr: number[] = [...elsPanes].map((elPane: HTMLElement): number => {
-                // @ts-ignore
-                return parseFloat(elPane.dataset.fr || 1 / elsPanes.length);
-        });
-        let elPaneCurr: HTMLElement | null = null;
-        let paneIndex: number              = -1;
-        let frStart: number                = 0;
-        let frNext: number                 = 0;
-
-        function frToCSS(): void {
-                // @ts-ignore
-                elParent.style["grid-template-columns"] = fr.join("fr ") + "fr";
-        }
-
-        function pointerDown(e: MouseEvent): void {
-                if (!e.target || !e.currentTarget)
-                        return;
-
-                if (isResizing || !(e.target as HTMLElement).closest(".gutter"))
-                        return;
-
-                isResizing = true;
-
-                elParent.classList.add("is-resizing");
-                elPaneCurr = (e.currentTarget as HTMLElement).previousElementSibling as (HTMLElement | null);
-                // @ts-ignore
-                fr         = [...elsPanes].map((elPane) => elPane.clientWidth / elParent.clientWidth);
-                // @ts-ignore
-                paneIndex  = [...elsPanes].indexOf(elPaneCurr);
-                frStart    = fr[paneIndex];
-                frNext     = fr[paneIndex + 1];
-                addEventListener("pointermove", pointerMove);
-                addEventListener("pointerup", pointerUp);
-        }
-
-        function pointerMove(e: MouseEvent): void {
-                e.preventDefault();
-
-                const paneBCR = elPaneCurr!.getBoundingClientRect();
-                const parentSize = elParent.clientWidth;
-                const pointer = {
-                        x: Math.max(0, Math.min(e.clientX - paneBCR.left, elParent.clientWidth)),
-                        y: Math.max(0, Math.min(e.clientY - paneBCR.top, elParent.clientHeight))
-                };
-                const frRel: number  = pointer["x"] / parentSize;
-                const frDiff: number = frStart - frRel;
-                fr[paneIndex]        = Math.max(0.05, frRel);
-                fr[paneIndex + 1]    = Math.max(0.05, frNext + frDiff);
-                frToCSS();
-                elPaneCurr!.dispatchEvent(new Event("resize"));
-        }
-
-        function pointerUp(_: MouseEvent): void {
-                removeEventListener("pointermove", pointerMove);
-                removeEventListener("pointerup", pointerUp);
-                isResizing = false;
-                elParent.classList.remove("is-resizing");
-        }
-
-        // @ts-ignore
-        [...elsPanes].slice(1).forEach((elPane: HTMLElement): void => {
-                elPane.append(elNew("span", { className: "gutter" }));
-                elPane.addEventListener("pointerdown", pointerDown);
-        });
-
-        frToCSS();
-        window.dispatchEvent(new Event("resize"));
-}
-
 function renderFlamegraph(output: ProfilerOutput): void {
-        interface FlameNode {
-                name: string;
-                value: number;
+        interface FlameNode extends StackFrameBase {
                 x: number;
                 y: number;
                 width: number;
@@ -252,7 +374,7 @@ function renderFlamegraph(output: ProfilerOutput): void {
                 return nodeName.substring(0, maxChars - 3) + "...";
         }
 
-        function renderNodes(parent: { name: string, value: number }, node: FlameNode): void {
+        function renderNodes(parent: StackFrameBase, node: FlameNode): void {
                 const element: HTMLDivElement = document.createElement("div");
                 element.className             = "flame-node";
                 element.style.left            = `${node.x}%`;
@@ -269,49 +391,15 @@ function renderFlamegraph(output: ProfilerOutput): void {
                 }
 
                 element.addEventListener("mouseenter", (): void => {
-                        const absPercentage: number = (node.value / root.value) * 100;
-                        const relPercentage: number = (node.value / parent.value) * 100;
-
-                        if (absPercentage >= 20) {
-                                time.classList.add("tooltip-fire");
-                                flame.style.display = "block";
-                        } else {
-                                time.classList.remove("tooltip-fire");
-                                flame.style.display = "none";
-                        }
-
-                        funcName.textContent   = node.name;
-                        value.textContent      = `${node.value}${output.type}`;
-                        absolute.textContent   = `${absPercentage.toFixed(2)}%`;
-                        relative.textContent   = `${relPercentage.toFixed(2)}%`;
-                        parentName.textContent = parent.name;
-
-                        tooltip.style.display = "block";
-                        tooltip.style.opacity = "1";
+                        HTMLFunctionTooltipElement.show(node, parent, output);
                 });
 
                 element.addEventListener("mousemove", (e: MouseEvent): void => {
-                        const rect: DOMRect = mainElement.getBoundingClientRect();
-                        if (rect.right - e.clientX < rect.width * 0.5) {
-                                tooltip.style.right = `${rect.width - e.clientX + 15}px`;
-                                tooltip.style.left  = "";
-                        } else {
-                                tooltip.style.left  = `${e.clientX + 15}px`;
-                                tooltip.style.right = "";
-                        }
-
-                        if (rect.bottom - e.clientY < rect.height * 0.2) {
-                                tooltip.style.bottom = `${rect.height - e.clientY + 10}px`
-                                tooltip.style.top     = ""
-                        } else {
-                                tooltip.style.top    = `${e.clientY - 10}px`;
-                                tooltip.style.bottom = ""
-                        }
+                        HTMLFunctionTooltipElement.move(e.clientX, e.clientY);
                 });
 
                 element.addEventListener("mouseleave", () => {
-                        tooltip.style.opacity = "0";
-                        tooltip.style.display = "none";
+                        HTMLFunctionTooltipElement.hide();
                 });
 
                 graph.appendChild(element);
@@ -403,8 +491,8 @@ function renderMethodList(output: ProfilerOutput): void {
 
         const root: StackFrame = output.stackFrame;
 
-        const grid: HTMLDivElement = document.createElement("div");
-        grid.className             = "panes methods";
+        const grid: HTMLResizableGridElement = document.createElement("resizable-grid") as HTMLResizableGridElement;
+        grid.className                       = "panes methods";
         mainElement.appendChild(grid);
 
         const names: HTMLElement = document.createElement("div");
@@ -414,8 +502,6 @@ function renderMethodList(output: ProfilerOutput): void {
         const samplesCount: HTMLElement = document.createElement("div");
         samplesCount.className          = "pane";
         grid.appendChild(samplesCount);
-
-        resizableGrid(grid);
 
         const methodText: HTMLDivElement = document.createElement("p");
         methodText.textContent           = "Method";
@@ -449,6 +535,11 @@ function renderMethodList(output: ProfilerOutput): void {
                 bg.style.width           = `${(node.value / nodes[0].value) * 100}%`;
                 bg.style.background      = `hsl(${getColorHue(node.value, nodes[0].value)}, 100%, 50%)`;
                 bar.appendChild(bg);
+
+                const text: HTMLParagraphElement = document.createElement("p");
+                text.className                   = "method-bar-text";
+                text.textContent                 = node.value.toFixed(2).toString();
+                bar.appendChild(text);
         });
 }
 

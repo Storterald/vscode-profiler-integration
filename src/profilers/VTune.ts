@@ -55,7 +55,6 @@ export class IntelVtune implements IProfiler {
 
         private async _getRoot(outDir: string, exeName: string): Promise<ProfilerOutput> {
                 const callstacks: string = fs.readFileSync(path.join(outDir, "callstacks.csv"), "utf8");
-                console.debug("callstacks data: ", callstacks);
 
                 const root: ProfilerOutput = {
                         exeName:    exeName,
@@ -63,6 +62,8 @@ export class IntelVtune implements IProfiler {
                         stackFrame: {
                                 name:     "all",
                                 value:    0,
+                                thread:   undefined,
+                                cpu:      undefined,
                                 children: []
                         }
                 };
@@ -85,6 +86,8 @@ export class IntelVtune implements IProfiler {
                                         const s: number = parent.children.push({
                                                 name:     stack[j].name,
                                                 value:    value,
+                                                thread:   "TODO-thread",
+                                                cpu:      "TODO-cpu",
                                                 children: []
                                         })
 
@@ -96,7 +99,6 @@ export class IntelVtune implements IProfiler {
                                 parent     = tmp;
                         }
                 }
-
 
                 utils.updateNodeValues(root.stackFrame);
                 return root;

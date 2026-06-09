@@ -8,224 +8,21 @@ interface ProfilerOutput {
 }
 
 interface StackFrameBase {
-        name:     string;
-        value:    number;
+        name:  string;
+        value: number;
 }
 
 interface StackFrame extends StackFrameBase {
+        thread:   string | undefined;
+        cpu:      string | undefined;
         children: StackFrame[];
 }
 
-type View = "flame-graph" | "calltree" | "methods";
+type View = "flame-graph" | "calltree" | "methods" | "timeline";
 
-class HTMLResizableGridElement extends HTMLElement {
-        private observer: MutationObserver | undefined;
-
-        constructor() {
-                super();
-
-                this.observer = new MutationObserver((mutations: MutationRecord[]): void => {
-                        for (const mutation of mutations)
-                                if (mutation.type === "childList")
-                                        this.updateList();
-                });
-
-                this.observer.observe(this, {
-                        childList: true
-                });
-        }
-
-        connectedCallback(): void {
-                this.setAttribute("is-resizing", "false");
-                this.updateList();
-        }
-
-        updateList(): void {
-                if (this.children.length === 0)
-                        return;
-
-                const elsPanes: NodeListOf<HTMLElement> = this.querySelectorAll(":scope > .pane");
-                let fr: number[]                        = [...elsPanes].map((elPane: HTMLElement): number => {
-                        return parseFloat(elPane.dataset.fr || (1 / elsPanes.length).toString());
-                });
-
-                let elPaneCurr: HTMLElement | null = null;
-                let paneIndex: number              = -1;
-                let frStart: number                = 0;
-                let frNext: number                 = 0;
-
-                const frToCSS = (): void => {
-                        this.style.gridTemplateColumns = fr.join("fr ") + "fr";
-                }
-
-                const pointerDown = (e: MouseEvent): void => {
-                        if (!e.target || !e.currentTarget)
-                                return;
-
-                        if (this.getAttribute("is-resizing") === "true"
-                            || !(e.target as HTMLElement).closest(".gutter"))
-                                return;
-
-                        elPaneCurr = (e.currentTarget as HTMLElement).previousElementSibling! as HTMLElement;
-                        fr         = [...elsPanes].map((elPane: HTMLElement): number => elPane.clientWidth / this.clientWidth);
-                        paneIndex  = [...elsPanes].indexOf(elPaneCurr);
-                        frStart    = fr[paneIndex];
-                        frNext     = fr[paneIndex + 1];
-
-                        this.setAttribute("is-resizing", "true");
-                        this.addEventListener("pointermove", pointerMove);
-                        this.addEventListener("pointerup", pointerUp);
-                }
-
-                const pointerMove = (e: MouseEvent): void => {
-                        e.preventDefault();
-
-                        const paneBCR: DOMRect   = elPaneCurr!.getBoundingClientRect();
-                        const parentSize: number = this.clientWidth;
-                        const pointer            = {
-                                x: Math.max(0, Math.min(e.clientX - paneBCR.left, this.clientWidth)),
-                                y: Math.max(0, Math.min(e.clientY - paneBCR.top, this.clientHeight))
-                        };
-
-                        const frRel: number  = pointer.x / parentSize;
-                        const frDiff: number = frStart - frRel;
-                        fr[paneIndex]        = Math.max(0.05, frRel);
-                        fr[paneIndex + 1]    = Math.max(0.05, frNext + frDiff);
-
-                        frToCSS();
-
-                        elPaneCurr!.dispatchEvent(new Event("resize"));
-                }
-
-                const pointerUp = (_: MouseEvent): void => {
-                        this.removeEventListener("pointermove", pointerMove);
-                        this.removeEventListener("pointerup", pointerUp);
-                        this.setAttribute("is-resizing", "false");
-                }
-
-                const elNew = (tag: string, prop = {}): HTMLElement => {
-                        return Object.assign(document.createElement(tag), prop);
-                }
-
-                const first: HTMLElement = this.children[0] as HTMLElement;
-                first.getElementsByClassName("gutter")[0]?.remove();
-                first.onpointerdown = null;
-
-                for (let i: number = 1; i < this.children.length; ++i) {
-                        const child: HTMLElement = this.children[i] as HTMLElement;
-                        if (child.getElementsByClassName("gutter").length === 0)
-                                child.append(elNew("span", { className: "gutter" }));
-                        child.onpointerdown = pointerDown;
-                }
-
-                frToCSS();
-                window.dispatchEvent(new Event("resize"));
-        }
-}
-customElements.define("resizable-grid", HTMLResizableGridElement);
-
-class HTMLFunctionTooltipElement extends HTMLElement {
-        private static tooltip: HTMLFunctionTooltipElement | undefined;
-
-        constructor() {
-                super();
-        }
-
-        connectedCallback(): void {
-                this.innerHTML = `
-<div class="tooltip-time tooltip-fire">
-        <p id="function-name" class="tooltip-function"></p>
-        <div style="flex-grow: 1"></div>
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" id="fire-icon" viewBox="0 0 16 16">
-                    <path d="M8 16c3.314 0 6-2 6-5.5 0-1.5-.5-4-2.5-6 .25 1.5-1.25 2-1.25 2C11 4 9 .5 6 0c.357 2 .5 4-2 6-1.25 1-2 2.729-2 4.5C2 14 4.686 16 8 16m0-1c-1.657 0-3-1-3-2.75 0-.75.25-2 1.25-3C6.125 10 7 10.5 7 10.5c-.375-1.25.5-3.25 2-3.5-.179 1-.25 2 1 3 .625.5 1 1.364 1 2.25C11 14 9.657 15 8 15"/>
-                </svg>
-                <p id="value-count-label"></p>
-        </div>
-        <div class="tooltip-data">
-                <p id="absolute-percentage-label" class="tooltip-percentage"></p>
-                <p>of all</p>
-                <div></div>
-                <div></div>
-                <p id="relative-percentage-label" class="tooltip-percentage"></p>
-                <p>of</p>
-                <p id="parent-name" class="tooltip-function"></p>
-        </div>
-</div>`
-        }
-
-        static show(node: StackFrameBase, parent: StackFrameBase, output: ProfilerOutput): void {
-                if (!HTMLFunctionTooltipElement.tooltip)
-                        HTMLFunctionTooltipElement.tooltip = document.body.appendChild(document.createElement("function-tooltip")) as HTMLFunctionTooltipElement
-
-                const self: HTMLFunctionTooltipElement = HTMLFunctionTooltipElement.tooltip;
-
-                const absPercentage: number = (node.value / output.stackFrame.value) * 100;
-                const relPercentage: number = (node.value / parent.value) * 100;
-
-                const time: HTMLDivElement             = self.querySelector(".tooltip-time")!;
-                const funcName: HTMLParagraphElement   = self.querySelector("#function-name")!;
-                const flame: SVGElement                = self.querySelector("#fire-icon")!;
-                const value: HTMLParagraphElement      = self.querySelector("#value-count-label")!;
-                const absolute: HTMLParagraphElement   = self.querySelector("#absolute-percentage-label")!;
-                const relative: HTMLParagraphElement   = self.querySelector("#relative-percentage-label")!;
-                const parentName: HTMLParagraphElement = self.querySelector("#parent-name")!;
-
-                if (absPercentage >= 20) {
-                        time.classList.add("tooltip-fire");
-                        flame.style.display = "block";
-                } else {
-                        time.classList.remove("tooltip-fire");
-                        flame.style.display = "none";
-                }
-
-                funcName.textContent   = node.name;
-                value.textContent      = `${node.value.toFixed(2)}${output.type}`;
-                absolute.textContent   = `${absPercentage.toFixed(2)}%`;
-                relative.textContent   = `${relPercentage.toFixed(2)}%`;
-                parentName.textContent = parent.name;
-
-                self.style.opacity = "1";
-                self.style.display = "block";
-        }
-
-
-        static move(x: number, y: number): void {
-                if (!HTMLFunctionTooltipElement.tooltip)
-                        return;
-
-                const self: HTMLFunctionTooltipElement = HTMLFunctionTooltipElement.tooltip;
-
-                const rect: DOMRect = mainElement.getBoundingClientRect();
-                if (rect.right - x < rect.width * 0.5) {
-                        self.style.right = `${rect.width - x + 15}px`;
-                        self.style.left  = "";
-                } else {
-                        self.style.left  = `${x + 15}px`;
-                        self.style.right = "";
-                }
-
-                if (rect.bottom - y < rect.height * 0.2) {
-                        self.style.bottom = `${rect.height - y + 10}px`
-                        self.style.top     = ""
-                } else {
-                        self.style.top    = `${y - 10}px`;
-                        self.style.bottom = ""
-                }
-        }
-
-        static hide(): void {
-                if (!HTMLFunctionTooltipElement.tooltip)
-                        return;
-
-                const self: HTMLFunctionTooltipElement = HTMLFunctionTooltipElement.tooltip;
-
-                self.style.opacity = "0";
-                self.style.display = "none";
-        }
-}
-customElements.define("function-tooltip", HTMLFunctionTooltipElement);
-
-const mainElement: HTMLDivElement = document.querySelector("#main")!;
+const threadSelector: HTMLDivElement             = document.getElementById("thread-selector")! as HTMLDivElement;
+const mainElement: HTMLDivElement                = document.getElementById("main")! as HTMLDivElement;
+const tooltipElement: HTMLFunctionTooltipElement = document.getElementById("tooltip")! as HTMLFunctionTooltipElement;
 
 // JetBrains chevrons. Apache 2.0 license.
 const chevrons: string = `
@@ -277,10 +74,10 @@ function getCssVariable(name: string): string {
 }
 
 function renderCurrentView(): void {
-        mainElement.innerHTML     = "";
-        mainElement.style.cssText = "";
-
+        mainElement.innerHTML = "";
         mainElement.className = `${currentView}-container`;
+
+        renderThreadList(currentData!);
 
         switch (currentView) {
                 case "flame-graph":
@@ -292,12 +89,55 @@ function renderCurrentView(): void {
                 case "methods":
                         renderMethodList(currentData!);
                         break;
+                case "timeline":
+                        renderTimeline(currentData!);
+                        break;
         }
 }
 
 function getColorHue(value: number, rootValue: number): number {
         const intensity: number = Math.min(0.8, (0.6 * value) / rootValue + 0.3);
         return 40 - (40 * intensity);
+}
+
+function renderThreadList(output: ProfilerOutput): void {
+        threadSelector.innerHTML = "";
+
+        const threads: { [thread: string]: any } = {};
+        function addThreads(frame: StackFrame): void {
+                if (frame.thread)
+                        threads[frame.thread] = {};
+                for (const child of frame.children)
+                        addThreads(child);
+        }
+        addThreads(output.stackFrame);
+
+        const keys: string[] = ["All threads"];
+        keys.push(...Object.keys(threads))
+        for (const key of keys) {
+                const button: HTMLDivElement = document.createElement("div");
+                button.className             = "thread-button";
+                button.textContent           = key;
+                threadSelector.appendChild(button);
+        }
+
+        let current: HTMLElement = threadSelector.firstChild! as HTMLElement;
+        function selectThread(event: PointerEvent): void {
+                if (!event.target)
+                        return;
+
+                current.classList.remove("active");
+                current = event.target as HTMLElement;
+                current.classList.add("active");
+
+                const thread: string = current.textContent;
+                // TODO: thread selection logic
+        }
+
+        for (const child of threadSelector.children)
+                (child as HTMLElement).onclick = selectThread;
+
+        (threadSelector.firstChild as HTMLElement).classList.add("active");
 }
 
 function renderFlamegraph(output: ProfilerOutput): void {
@@ -391,15 +231,15 @@ function renderFlamegraph(output: ProfilerOutput): void {
                 }
 
                 element.addEventListener("mouseenter", (): void => {
-                        HTMLFunctionTooltipElement.show(node, parent, output);
+                        tooltipElement.show(node, parent, output);
                 });
 
                 element.addEventListener("mousemove", (e: MouseEvent): void => {
-                        HTMLFunctionTooltipElement.move(e.clientX, e.clientY);
+                        tooltipElement.move(e.clientX, e.clientY);
                 });
 
                 element.addEventListener("mouseleave", () => {
-                        HTMLFunctionTooltipElement.hide();
+                        tooltipElement.hide();
                 });
 
                 graph.appendChild(element);
@@ -485,23 +325,27 @@ function renderCallTree(output: ProfilerOutput): void {
 
 function renderMethodList(output: ProfilerOutput): void {
         interface Method {
-                name: string;
+                name:  string;
                 value: number;
+                own:   number;
         }
 
         const root: StackFrame = output.stackFrame;
 
         const grid: HTMLResizableGridElement = document.createElement("resizable-grid") as HTMLResizableGridElement;
-        grid.className                       = "panes methods";
+        grid.className                       = "methods";
         mainElement.appendChild(grid);
 
         const names: HTMLElement = document.createElement("div");
-        names.className          = "pane";
         grid.appendChild(names);
 
         const samplesCount: HTMLElement = document.createElement("div");
-        samplesCount.className          = "pane";
+        samplesCount.setAttribute("initial-size", "15");
         grid.appendChild(samplesCount);
+
+        const ownSamplesCount: HTMLElement = document.createElement("div");
+        ownSamplesCount.setAttribute("initial-size", "15");
+        grid.appendChild(ownSamplesCount);
 
         const methodText: HTMLDivElement = document.createElement("p");
         methodText.textContent           = "Method";
@@ -511,43 +355,111 @@ function renderMethodList(output: ProfilerOutput): void {
         sampleText.textContent           = "Samples";
         samplesCount.appendChild(sampleText);
 
+        const ownSampleText: HTMLDivElement = document.createElement("p");
+        ownSampleText.textContent           = "Own Samples";
+        ownSamplesCount.appendChild(ownSampleText);
+
         const nodes: Method[] = [];
         function addNode(node: StackFrame): void {
-                nodes.push({ name: node.name, value: node.value });
-                if (node.children)
-                        node.children.forEach(addNode);
+                nodes.push({
+                        name:  node.name,
+                        value: node.value,
+                        own:   node.value - node.children.reduce((sum: number, child: StackFrame): number => sum + child.value, 0)
+                });
+                node.children.forEach(addNode);
         }
 
         root.children.forEach(addNode);
         nodes.sort((a: Method, b: Method): number => b.value - a.value);
 
+        const maxOwnValue: number = Math.max(...nodes.map(node => node.own));
         nodes.forEach((node: Method): void => {
                 const name: HTMLParagraphElement = document.createElement("p");
                 name.textContent                 = node.name;
                 names.appendChild(name);
 
-                const bar: HTMLDivElement = document.createElement("div");
-                bar.className             = "method-bar";
-                samplesCount.appendChild(bar);
+                const bar1: HTMLDivElement = document.createElement("div");
+                bar1.className             = "method-bar";
+                samplesCount.appendChild(bar1);
 
-                const bg: HTMLDivElement = document.createElement("div");
-                bg.className             = "method-bar-bg";
-                bg.style.width           = `${(node.value / nodes[0].value) * 100}%`;
-                bg.style.background      = `hsl(${getColorHue(node.value, nodes[0].value)}, 100%, 50%)`;
-                bar.appendChild(bg);
+                const bg1: HTMLDivElement = document.createElement("div");
+                bg1.className             = "method-bar-bg";
+                bg1.style.width           = `${(node.value / nodes[0].value) * 100}%`;
+                bg1.style.background      = `hsl(${getColorHue(node.value, nodes[0].value)}, 100%, 50%)`;
+                bar1.appendChild(bg1);
 
-                const text: HTMLParagraphElement = document.createElement("p");
-                text.className                   = "method-bar-text";
-                text.textContent                 = node.value.toFixed(2).toString();
-                bar.appendChild(text);
+                const text1: HTMLParagraphElement = document.createElement("p");
+                text1.className                   = "method-bar-text";
+                text1.textContent                 = node.value.toFixed(2).toString();
+                bar1.appendChild(text1);
+
+                const bar2: HTMLDivElement = document.createElement("div");
+                bar2.className             = "method-bar";
+                ownSamplesCount.appendChild(bar2);
+
+                const bg2: HTMLDivElement = document.createElement("div");
+                bg2.className             = "method-bar-bg";
+                bg2.style.width           = `${(node.own / maxOwnValue) * 100}%`;
+                bg2.style.background      = `hsl(${getColorHue(node.own, maxOwnValue)}, 100%, 50%)`;
+                bar2.appendChild(bg2);
+
+                const text2: HTMLParagraphElement = document.createElement("p");
+                text2.className                   = "method-bar-text";
+                text2.textContent                 = node.own.toFixed(2).toString();
+                bar2.appendChild(text2);
         });
 }
 
-function isValidProfilerOutput(data: ProfilerOutput): boolean {
-        return !!data.exeName && !!data.type && !!data.stackFrame && !!data.stackFrame.value;
+function renderTimeline(output: ProfilerOutput): void {
+        let cpuMaxUsage: number     = 0;
+        let heapMaxUsage: number    = 0;
+        let threadsMaxUsage: number = 0;
+        let stackMaxUsage: number   = 0;
+
+        mainElement.innerHTML = `
+<div id="cpu-container" class="timeline-grid-element">
+  <div class="timeline-container-title">
+    <p>CPU</p>
+    <p>${cpuMaxUsage}</p>
+  </div>
+  <svg class="timeline-graph">
+  
+  </svg>
+</div>
+<div id="heap-container" class="timeline-grid-element">
+  <div class="timeline-container-title">
+    <p>Heap</p>
+    <p>${heapMaxUsage}</p>
+  </div>
+  <svg class="timeline-graph">
+  
+  </svg>
+</div>
+<div id="threads-container" class="timeline-grid-element">
+  <div class="timeline-container-title">
+    <p>Threads</p>
+    <p>${threadsMaxUsage}</p>
+  </div>
+  <svg class="timeline-graph">
+  
+  </svg>
+</div>
+<div id="stack-container" class="timeline-grid-element">
+  <div class="timeline-container-title">
+    <p>Non-Heap Memory</p>
+    <p>${stackMaxUsage}</p>
+  </div>
+  <svg class="timeline-graph">
+  
+  </svg>
+</div>`;
 }
 
 window.addEventListener("message", (event: MessageEvent<ProfilerOutput>): void => {
+        function isValidProfilerOutput(data: ProfilerOutput): boolean {
+                return !!data.exeName && !!data.type && !!data.stackFrame && !!data.stackFrame.value;
+        }
+
         if (event.data && isValidProfilerOutput(event.data)) {
                 currentData = event.data;
                 renderCurrentView();

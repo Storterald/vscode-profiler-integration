@@ -9,6 +9,8 @@ export interface ProfilerOutput {
 export interface StackFrame {
         name:     string;
         value:    number;
+        thread:   string | undefined;
+        cpu:      string | undefined;
         children: StackFrame[];
 }
 

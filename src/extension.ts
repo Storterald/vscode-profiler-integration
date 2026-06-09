@@ -11,25 +11,31 @@ import { ProfilerWebviewProvider } from "./profiler-webview-provider";
 
 let profilerWebview: ProfilerWebviewProvider;
 
-export function activate(context: vscode.ExtensionContext) {
+// noinspection JSUnusedGlobalSymbols
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
         profilerWebview = new ProfilerWebviewProvider(context);
 
         vscode.window.registerWebviewViewProvider("profiler.webview", profilerWebview);
-        context.subscriptions.push(vscode.commands.registerCommand("profiler.profile-project", async () => {
+
+        await profilerWebview.updateFlamegraph(JSON.parse(fs.readFileSync("C:\\Users\\maggioli\\Downloads\\2026-06-08_20-52-50.json").toString("utf-8")));
+
+        context.subscriptions.push(vscode.commands.registerCommand("profiler.profile-project", async (): Promise<void> => {
                 // TODO support for single file applications
                 const exe: string = await vscode.commands.executeCommand("cmake.getLaunchTargetPath");
                 await vscode.commands.executeCommand("cmake.build");
 
-                const profiler = ((): IProfiler | undefined => {
-                        if (process.platform != "win32")
+                const profiler: IProfiler | undefined = ((): IProfiler | undefined => {
+                        if (process.platform === "linux")
                                 return new Perf();
 
-                        const model: string = os.cpus()[0].model;
-                        if (/intel/i.test(model))
-                                return new IntelVtune();
+                        if (process.platform === "win32") {
+                                const model: string = os.cpus()[0].model;
+                                if (/intel/i.test(model))
+                                        return new IntelVtune();
 
-                        if (/amd|ryzen|epyc/i.test(model))
-                                return new AMDuProf();
+                                if (/amd|ryzen|epyc/i.test(model))
+                                        return new AMDuProf();
+                        }
 
                         vscode.window.showErrorMessage("Unsupported platform.");
                         return undefined;

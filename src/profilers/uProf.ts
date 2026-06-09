@@ -84,6 +84,7 @@ export class AMDuProf implements IProfiler {
 
         private async _getRoot(context: vscode.ExtensionContext, cpuDbPath: string, exeName: string): Promise<ProfilerOutput> {
                 const db = await sqlite.open({ filename: cpuDbPath, driver: sqlite3.Database, mode: sqlite3.OPEN_READONLY });
+                // TODO: Promise.all
                 const functions = await this._getFunctions(context, db);
                 const callstack = await this._getCallstack(context, db);
                 const functionModules = await this._getFunctionModules(context, db);
@@ -91,11 +92,13 @@ export class AMDuProf implements IProfiler {
                 await db.close();
 
                 const root: ProfilerOutput = {
-                        exeName: exeName,
-                        type: "s",
+                        exeName:    exeName,
+                        type:       "s",
                         stackFrame: {
-                                name: "all",
-                                value: 0,
+                                name:     "all",
+                                value:    0,
+                                thread:   undefined,
+                                cpu:      undefined,
                                 children: []
                         }
                 };
@@ -107,9 +110,9 @@ export class AMDuProf implements IProfiler {
                         for (const frame of frames) {
                                 let name: string | undefined = functions.get(frame.functionId);
                                 if (!name) {
-                                        const moduleName = functionModules.get(frame.functionId);
-                                        const functionHex = frame.functionId.toString(16);
-                                        name = moduleName ?
+                                        const moduleName: string | undefined = functionModules.get(frame.functionId);
+                                        const functionHex: string            = frame.functionId.toString(16);
+                                        name                                 = moduleName ?
                                                 `${moduleName}!:0x${functionHex}` :
                                                 `unknown!:0x${functionHex}`;
                                 }
@@ -118,19 +121,19 @@ export class AMDuProf implements IProfiler {
                                 if ((childNode = currentNode.children.find(n => n.name === name))) {
                                         currentNode = childNode;
                                 } else {
-                                        let s = currentNode.children.push({
-                                                name: name,
-                                                value: 0,
+                                        let s: number = currentNode.children.push({
+                                                name:     name,
+                                                value:    0,
+                                                thread:   "TODO-thread",
+                                                cpu:      "TODO-cpu",
                                                 children: []
                                         });
                                         currentNode = currentNode.children[s - 1];
                                 }
                         }
 
-                        // Retrieve the sample weight for this callstack (default to 1 if not found)
-                        // and add it to the leaf node.
-                        const sampleWeight = callstackWeights.get(frames[0].callstackId) || 1;
-                        currentNode.value += sampleWeight;
+                        const sampleWeight: number = callstackWeights.get(frames[0].callstackId) || 1;
+                        currentNode.value         += sampleWeight;
                 }
 
                 utils.updateNodeValues(root.stackFrame);

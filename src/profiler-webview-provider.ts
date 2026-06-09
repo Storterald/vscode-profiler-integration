@@ -66,12 +66,14 @@ export class ProfilerWebviewProvider implements vscode.WebviewViewProvider {
 
         private _getHtmlForWebview(webview: vscode.Webview): string {
                 const css: string   = fs.readFileSync(path.join(this._ctx.extensionPath, "webview", "profiler.css"), "utf-8");
-                const js: string    = fs.readFileSync(path.join(this._ctx.extensionPath, "build", "webview", "profiler.js"), "utf-8");
+                const js1: string   = fs.readFileSync(path.join(this._ctx.extensionPath, "build", "webview", "elements.js"), "utf-8");
+                const js2: string   = fs.readFileSync(path.join(this._ctx.extensionPath, "build", "webview", "profiler.js"), "utf-8");
                 const nonce: string = crypto.randomBytes(16).toString("base64");
 
                 return fs.readFileSync(path.join(this._ctx.extensionPath, "webview", "profiler.html"), "utf-8")
-                        .replace("<!-- meta -->", `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline';">`)
-                        .replace("<!-- css -->", `<style>${css}</style>`)
-                        .replace("<!-- js -->", `<script nonce="${nonce}">${js}</script>`);
+                        .replace("<!-- meta -->",     `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline';">`)
+                        .replace("<!-- css -->",      `<style>${css}</style>`)
+                        .replace("<!-- js-types -->", `<script nonce="${nonce}">${js1}</script>`)
+                        .replace("<!-- js-code -->",  `<script nonce="${nonce}">${js2}</script>`);
         }
 }

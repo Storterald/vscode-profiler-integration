@@ -57,6 +57,8 @@ export class Perf implements IProfiler {
                         stackFrame: {
                                 name:     "all",
                                 value:    0,
+                                thread:   undefined,
+                                cpu:      undefined,
                                 children: []
                         }
                 };
@@ -92,6 +94,8 @@ export class Perf implements IProfiler {
                                         const s: number = current.children.push({
                                                 name:     name,
                                                 value:    0,
+                                                thread:   "TODO-thread",
+                                                cpu:      "TODO-cpu",
                                                 children: []
                                         });
                                         current = current.children[s - 1];

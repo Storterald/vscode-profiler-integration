@@ -1,2 +1,2 @@
-SELECT id AS functionId, name AS functionName
+SELECT id, name
 FROM Function

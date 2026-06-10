@@ -5,12 +5,19 @@ import * as sqlite from "sqlite";
 import * as utils from "../utils";
 import * as sqlite3 from "sqlite3";
 import { ExtensionContext } from "vscode";
-import { IProfiler, ProfilerOutput, StackFrame } from "../iprofiler";
+import { IProfiler, ProfilerOutput, StackFrame, Timepoint } from "../iprofiler";
 
 interface CallstackFrame {
         callstackId: string;
         functionId: number;
         depth: number;
+}
+
+interface FunctionInfo {
+        moduleName: string;
+        threadId:   number;
+        cpuId:      number;
+        second:     number;
 }
 
 export class AMDuProf implements IProfiler {
@@ -67,13 +74,14 @@ export class AMDuProf implements IProfiler {
         private _getTranslateCommand(cli: string, cwd: string, input: string): string {
                 return `& '${cli}' translate ` +
                         "--agg-interval 1024 " +
+                        "--db sqlite " + // TODO: if version > 5.3
                         `--symbol-path ${cwd} ` +
                         `-i ${input}`
         }
 
         private _getFirstChildDirectory(dirPath: string): string | undefined {
                 try {
-                        const files = fs.readdirSync(dirPath);
+                        const files       = fs.readdirSync(dirPath);
                         const directories = files.filter(file => fs.statSync(path.join(dirPath, file)).isDirectory());
 
                         return directories.length > 0 ? path.join(dirPath, directories[0]) : undefined;
@@ -83,133 +91,176 @@ export class AMDuProf implements IProfiler {
         }
 
         private async _getRoot(context: vscode.ExtensionContext, cpuDbPath: string, exeName: string): Promise<ProfilerOutput> {
-                const db = await sqlite.open({ filename: cpuDbPath, driver: sqlite3.Database, mode: sqlite3.OPEN_READONLY });
-                // TODO: Promise.all
-                const functions = await this._getFunctions(context, db);
-                const callstack = await this._getCallstack(context, db);
-                const functionModules = await this._getFunctionModules(context, db);
-                const callstackWeights = await this._getCallstackWeights(context, db);
-                await db.close();
+                const db = await sqlite.open({
+                        filename: cpuDbPath,
+                        driver:   sqlite3.Database,
+                        mode:     sqlite3.OPEN_READONLY
+                });
+                try {
+                        const [functions, callstack, infos, weights] = await Promise.all([
+                                await this._getFunctions(context, db),
+                                await this._getCallstack(context, db),
+                                await this._getFunctionInfos(context, db),
+                                await this._getCallstackWeights(context, db)
+                        ]);
 
-                const root: ProfilerOutput = {
-                        exeName:       exeName,
-                        type:          " s",
-                        stackFrame: {
-                                name:     "all",
-                                value:    0,
-                                thread:   undefined,
-                                cpu:      undefined,
-                                children: []
-                        },
-                        supportsCpu:   false,
-                        supportsHeap:  false,
-                        supportsStack: false,
-                        timepoints:    []
-                };
+                        const root: ProfilerOutput = {
+                                exeName:          exeName,
+                                type:             " s",
+                                stackFrame: {
+                                        name:     "all",
+                                        value:    0,
+                                        thread:   undefined,
+                                        cpu:      undefined,
+                                        children: []
+                                },
+                                supportsTimeline: true,
+                                supportsCpu:      false,
+                                supportsHeap:     false,
+                                supportsStack:    false,
+                                timepoints:       []
+                        };
 
-                for (const frames of callstack.values()) {
-                        frames.sort((a: CallstackFrame, b: CallstackFrame): number => b.depth - a.depth); // leaf first
+                        for (const frames of Object.values(callstack)) {
+                                frames.sort((a: CallstackFrame, b: CallstackFrame): number => b.depth - a.depth); // leaf first
 
-                        let currentNode: StackFrame = root.stackFrame;
-                        for (const frame of frames) {
-                                let name: string | undefined = functions.get(frame.functionId);
-                                if (!name) {
-                                        const moduleName: string | undefined = functionModules.get(frame.functionId);
-                                        const functionHex: string            = frame.functionId.toString(16);
-                                        name                                 = moduleName ?
-                                                `${moduleName}!:0x${functionHex}` :
-                                                `unknown!:0x${functionHex}`;
+                                let currentNode: StackFrame = root.stackFrame;
+                                for (const frame of frames) {
+                                        let name: string | undefined         = functions[frame.functionId];
+                                        const info: FunctionInfo | undefined = infos[frame.functionId];
+                                        
+                                        if (!name) {
+                                                const functionHex: string = frame.functionId.toString(16);
+                                                name                      = info ?
+                                                        `${info.moduleName}!:0x${functionHex}` :
+                                                        `unknown!:0x${functionHex}`;
+                                        }
+
+                                        if (info) {
+                                                const existing: Timepoint      = root.timepoints[info.second] || {
+                                                        milli:  info.second * 1000,
+                                                        points: {}
+                                                }
+                                                existing.points[info.threadId] = {
+                                                        cpu:   0,
+                                                        heap:  0,
+                                                        stack: 0
+                                                };
+                                                root.timepoints[info.second]   = existing;
+                                        }
+                                        
+                                        let childNode: StackFrame | undefined;
+                                        if ((childNode = currentNode.children.find(n => n.name === name))) {
+                                                currentNode = childNode;
+                                        } else {
+                                                const size: number = currentNode.children.push({
+                                                        name:     name,
+                                                        value:    0,
+                                                        thread:   info?.threadId,
+                                                        cpu:      info?.cpuId,
+                                                        children: []
+                                                });
+                                                currentNode = currentNode.children[size - 1];
+                                        }
                                 }
 
-                                let childNode: StackFrame | undefined;
-                                if ((childNode = currentNode.children.find(n => n.name === name))) {
-                                        currentNode = childNode;
-                                } else {
-                                        let s: number = currentNode.children.push({
-                                                name:     name,
-                                                value:    0,
-                                                thread:   "TODO-thread",
-                                                cpu:      "TODO-cpu",
-                                                children: []
-                                        });
-                                        currentNode = currentNode.children[s - 1];
-                                }
+                                const weight: number = weights[frames[0].callstackId] || 1;
+                                currentNode.value   += weight;
                         }
 
-                        const sampleWeight: number = callstackWeights.get(frames[0].callstackId) || 1;
-                        currentNode.value         += sampleWeight;
-                }
+                        utils.updateNodeValues(root.stackFrame);
 
-                utils.updateNodeValues(root.stackFrame);
-                return root;
+                        root.timepoints = root.timepoints.filter(e => e !== null)
+                        return root;
+                } finally {
+                        await db.close();
+                }
         }
 
-        private async _getFunctions(context: vscode.ExtensionContext, db: sqlite.Database): Promise<Map<number, string>> {
+        private async _getFunctions(context: vscode.ExtensionContext, db: sqlite.Database): Promise<{ [key: number]: string }> {
                 interface Function {
-                        functionId: number;
-                        functionName: string;
+                        id:   number;
+                        name: string;
                 }
 
-                const query = await this._loadSQL(context, "functions.sql");
-                const results = await db.all(query) as Function[];
+                const functionsQuery = await this._loadSQL(context, "functions.sql");
+                const functions      = await db.all(functionsQuery) as Function[];
 
-                const functions = new Map<number, string>();
-                results.forEach(({ functionId, functionName }) => {
-                        functions.set(functionId, functionName);
-                });
+                const functionNames: { [key: number]: string } = {};
+                for (const func of functions)
+                        functionNames[func.id] = func.name;
 
-                return functions;
+                return functionNames;
         }
 
-        private async _getCallstack(context: vscode.ExtensionContext, db: sqlite.Database): Promise<Map<string, Array<CallstackFrame>>> {
-                const query = await this._loadSQL(context, "callstack.sql");
-                const results = await db.all(query) as CallstackFrame[];
+        private async _getCallstack(context: vscode.ExtensionContext, db: sqlite.Database): Promise<{ [key: string]: CallstackFrame[] }> {
+                const callstackQuery  = await this._loadSQL(context, "callstack.sql");
+                const callstackFrames = await db.all(callstackQuery) as CallstackFrame[];
 
-                const callstack = new Map<string, Array<CallstackFrame>>();
-                results.forEach(row => {
-                        const id = row.callstackId;
-                        if (!callstack.has(id))
-                                callstack.set(id, []);
+                const callstack: { [key: string]: CallstackFrame[] } = {};
+                for (const frame of callstackFrames) {
+                        const id: string = frame.callstackId;
+                        if (!(id in callstack))
+                                callstack[id] = [];
 
-                        callstack.get(id)!.push(row);
-                });
+                        callstack[id].push(frame);
+                }
 
                 return callstack;
         }
 
-        private async _getCallstackWeights(context: vscode.ExtensionContext, db: sqlite.Database): Promise<Map<string, number>> {
+        private async _getCallstackWeights(context: vscode.ExtensionContext, db: sqlite.Database): Promise<{ [key: string]: number }> {
                 interface UnifiedSampleRow {
                         callstackId: string;
-                        weight: number;
+                        weight:      number;
                 }
 
-                const query = await this._loadSQL(context, "weights.sql");
-                const results = await db.all(query) as UnifiedSampleRow[];
+                const weightsQuery = await this._loadSQL(context, "weights.sql");
+                const weights      = await db.all(weightsQuery) as UnifiedSampleRow[];
 
-                const weightMap = new Map<string, number>();
-                results.forEach(row => {
-                        weightMap.set(row.callstackId, row.weight);
-                });
+                const functionWeight: { [key: string]: number } = {};
+                for (const weight of weights)
+                        functionWeight[weight.callstackId] = weight.weight;
 
-                return weightMap;
+                return functionWeight;
         }
 
-        private async _getFunctionModules(context: vscode.ExtensionContext, db: sqlite.Database): Promise<Map<number, string | undefined>> {
-                const query1 = await this._loadSQL(context, "modules.sql");
-                const results1 = await db.all(query1) as { moduleId: number, modulePath: string }[];
+        private async _getFunctionInfos(context: vscode.ExtensionContext, db: sqlite.Database): Promise<{ [key: number]: FunctionInfo }> {
+                interface Module {
+                        id:   number;
+                        path: string
+                }
 
-                const moduleNames = new Map<number, string>();
-                results1.forEach(({ moduleId, modulePath }) => {
-                        moduleNames.set(moduleId, path.basename(modulePath));
-                });
+                interface Sample {
+                        module: number;
+                        id:     number;
+                        thread: number;
+                        cpu:    number;
+                        second: number;
+                }
+                
+                const [modulesQuery, samplesQuery] = await Promise.all([
+                        await this._loadSQL(context, "modules.sql"),
+                        await this._loadSQL(context, "unifiedSampleSeries.sql")
+                ]);
 
-                const query2 = await this._loadSQL(context, "unifiedSampleSeries.sql");
-                const results2 = await db.all(query2) as { moduleId: number, functionId: number }[];
+                const [modules, samples] = await Promise.all([
+                        await db.all(modulesQuery) as Module[],
+                        await db.all(samplesQuery) as Sample[]
+                ]);
 
-                const functionModules = new Map<number, string | undefined>();
-                results2.forEach(({ moduleId, functionId }) => {
-                        functionModules.set(functionId, moduleNames.get(moduleId));
-                });
+                const moduleNames: { [key: number]: string; } = {};
+                for (const module of modules)
+                        moduleNames[module.id] = path.basename(module.path);
+
+                const functionModules: { [key: number]: FunctionInfo } = {};
+                for (const sample of samples)
+                        functionModules[sample.id] = {
+                                moduleName: moduleNames[sample.module],
+                                threadId:   sample.thread,
+                                cpuId:      sample.cpu,
+                                second:     sample.second
+                        };
 
                 return functionModules;
         }

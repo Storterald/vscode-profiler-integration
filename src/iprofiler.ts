@@ -1,7 +1,7 @@
 import { ExtensionContext } from "vscode";
 
 export interface Timepoint {
-        date:   string;
+        milli:  number;
         points: {
                 [key: string]: {
                         cpu:     number;
@@ -13,13 +13,14 @@ export interface Timepoint {
 }
 
 export interface ProfilerOutput {
-        exeName:         string;
-        type:            string;
-        stackFrame:      StackFrame;
-        supportsCpu:     boolean;
-        supportsHeap:    boolean;
-        supportsStack:   boolean;
-        timepoints:      Timepoint[];
+        exeName:          string;
+        type:             string;
+        stackFrame:       StackFrame;
+        supportsTimeline: boolean;
+        supportsCpu:      boolean;
+        supportsHeap:     boolean;
+        supportsStack:    boolean;
+        timepoints:       Timepoint[];
 }
 
 export interface StackFrame {

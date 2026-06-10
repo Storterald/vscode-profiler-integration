@@ -8,18 +8,19 @@ interface TimepointThreadData {
 }
 
 interface Timepoint {
-        date:   string;
+        milli:  number;
         points: { [thread: string]: TimepointThreadData }
 }
 
 interface ProfilerOutput {
-        exeName:         string;
-        type:            string;
-        stackFrame:      StackFrame;
-        supportsCpu:     boolean;
-        supportsHeap:    boolean;
-        supportsStack:   boolean;
-        timepoints:      Timepoint[];
+        exeName:          string;
+        type:             string;
+        stackFrame:       StackFrame;
+        supportsTimeline: boolean;
+        supportsCpu:      boolean;
+        supportsHeap:     boolean;
+        supportsStack:    boolean;
+        timepoints:       Timepoint[];
 }
 
 interface StackFrameBase {
@@ -34,7 +35,7 @@ interface StackFrame extends StackFrameBase {
 }
 
 interface ChartPoint {
-        date:  Date;
+        milli: number;
         value: number;
 }
 
@@ -434,26 +435,29 @@ function renderMethodList(output: ProfilerOutput): void {
         });
 }
 
-function buildSvgChart(timepoints: ChartPoint[], id: string, kind: string, maxY: number, ticks: number, w: number, h: number, pad: { top: number, bottom: number, right: number, left: number }): string {
+function buildSvgChart(timepoints: ChartPoint[], id: string, kind: string, maxY: number, ticks: number, w: number, h: number, pad: { top: number, bottom: number, right: number, left: number }): string {        
         const innerW: number = w - pad.left - pad.right;
         const innerH: number = h - pad.top - pad.bottom;
-        const minT: number   = timepoints[0].date.getTime();
-        const maxT: number   = timepoints[timepoints.length - 1].date.getTime();
+        const minT: number   = timepoints[0].milli;
+        const maxT: number   = timepoints[timepoints.length - 1].milli;
+        // TODO: if minT === maxT
 
-        function toX(d: Date): number {
-                return pad.left + ((d.getTime() - minT) / (maxT - minT)) * innerW;
+        console.log(timepoints)
+
+        function toX(milli: number): number {
+                return pad.left + ((milli - minT) / (maxT - minT)) * innerW;
         }
 
         function toY (pct: number): number {
                 return pad.top + innerH - (pct / maxY) * innerH;
         }
 
-        const firstX: string = toX(timepoints[0].date).toFixed(1);
-        const lastX: string  = toX(timepoints[timepoints.length - 1].date).toFixed(1);
+        const firstX: string = toX(timepoints[0].milli).toFixed(1);
+        const lastX: string  = toX(timepoints[timepoints.length - 1].milli).toFixed(1);
         const baseY: string  = toY(0).toFixed(1);
 
         const points: string = timepoints
-                .map((tp: ChartPoint): string => `${toX(tp.date).toFixed(1)},${toY(tp.value).toFixed(1)}`)
+                .map((tp: ChartPoint): string => `${toX(tp.milli).toFixed(1)},${toY(tp.value).toFixed(1)}`)
                 .join(' ');
         const line: string   = `<polygon points="${firstX},${baseY} ${points} ${lastX},${baseY}" id="${id}" class="timeline-chart"></polygon>`;
 
@@ -488,7 +492,7 @@ function buildSvgChart(timepoints: ChartPoint[], id: string, kind: string, maxY:
 
         const xTicks: string = secondTicks.map((t: number): string => {
                 const x: string     = (pad.left + ((t - minT) / (maxT - minT)) * innerW).toFixed(1);
-                const label: string = new Date(t).toLocaleTimeString();
+                const label: string = `${Math.floor(t / 60000)}:${Math.floor((t % 60000) / 1000.0)}.${t % 1000}`;
                 return `<text x="${x}" y="${pad.top + innerH + 20}" text-anchor="middle" class="timeline-chart-text">${label}</text>`;
         }).join('\n');
 
@@ -507,6 +511,9 @@ function buildSvgChart(timepoints: ChartPoint[], id: string, kind: string, maxY:
 }
 
 function renderTimeline(output: ProfilerOutput): void {
+        if (!output.supportsTimeline)
+                return;
+
         const ticks: number = 5;
         const w: number     = 500;
         const h: number     = 300;
@@ -515,10 +522,10 @@ function renderTimeline(output: ProfilerOutput): void {
         // TODO: sometimes CPU usage for a thread is over 100%???
 
         interface FilteredTimepoint {
-                date:    Date;
-                cpu:     number;
-                heap:    number;
-                stack:   number;
+                milli: number;
+                cpu:   number;
+                heap:  number;
+                stack: number;
         }
 
         const threadsMaxUsage: number = Math.max(...output.timepoints.map((t: Timepoint): number => Object.keys(t.points).length));
@@ -527,7 +534,7 @@ function renderTimeline(output: ProfilerOutput): void {
         if (currentThread === "All threads") {
                 filtered = output.timepoints.map((t: Timepoint): FilteredTimepoint => {
                         return {
-                                date:  new Date(t.date),
+                                milli: t.milli,
                                 cpu:   Object.values(t.points).reduce((s: number, v: TimepointThreadData): number => s + v.cpu, 0) / threadsMaxUsage,
                                 heap:  Object.values(t.points).reduce((s: number, v: TimepointThreadData): number => s + v.heap, 0),
                                 stack: Object.values(t.points).reduce((s: number, v: TimepointThreadData): number => s + v.stack, 0)
@@ -538,7 +545,7 @@ function renderTimeline(output: ProfilerOutput): void {
                         .filter((t: Timepoint): boolean => currentThread in t.points)
                         .map((t: Timepoint): FilteredTimepoint => {
                                 return {
-                                        date:  new Date(t.date),
+                                        milli: t.milli,
                                         cpu:   t.points[currentThread].cpu,
                                         heap:  t.points[currentThread].heap,
                                         stack: t.points[currentThread].stack
@@ -546,9 +553,9 @@ function renderTimeline(output: ProfilerOutput): void {
                         });
         }
 
-        const cpuMaxUsage: number   = Math.max(...filtered.map((t: FilteredTimepoint): number => t.cpu));
-        const heapMaxUsage: number  = Math.max(...filtered.map((t: FilteredTimepoint): number => t.heap));
-        const stackMaxUsage: number = Math.max(...filtered.map((t: FilteredTimepoint): number => t.stack));
+        const cpuMaxUsage: number   = output.supportsCpu ? Math.max(...filtered.map((t: FilteredTimepoint): number => t.cpu)) : 0;
+        const heapMaxUsage: number  = output.supportsHeap ? Math.max(...filtered.map((t: FilteredTimepoint): number => t.heap)) : 0;
+        const stackMaxUsage: number = output.supportsStack ? Math.max(...filtered.map((t: FilteredTimepoint): number => t.stack)) : 0;
 
         mainElement.innerHTML = `
 <div id="cpu-container" class="timeline-grid-element">
@@ -560,7 +567,7 @@ function renderTimeline(output: ProfilerOutput): void {
     ${ output.supportsCpu ? `
       ${buildSvgChart(filtered.map((t: FilteredTimepoint): ChartPoint => {
         return {
-          date: t.date,
+          milli: t.milli,
           value: t.cpu
         }
       }), "cpu-chart", '%', 100, ticks, w, h, pad)}` : `
@@ -577,7 +584,7 @@ function renderTimeline(output: ProfilerOutput): void {
     ${ output.supportsHeap ? `
       ${buildSvgChart(filtered.map((t: FilteredTimepoint): ChartPoint => {
         return {
-          date:  t.date,
+          milli: t.milli,
           value: t.heap
         }
       }), "heap-chart", '', heapMaxUsage, ticks, w, h, pad)}` : `
@@ -591,10 +598,10 @@ function renderTimeline(output: ProfilerOutput): void {
     <p>${threadsMaxUsage}</p>
   </div>
   <div class="chart-container">
-    ${ output.supportsCpu || output.supportsHeap || output.supportsStack ? `
+    ${ output.supportsTimeline ? `
       ${buildSvgChart(output.timepoints.map((t: Timepoint): ChartPoint => {
         return {
-          date:  new Date(t.date),
+          milli: t.milli,
           value: Object.keys(t.points).length
         }
       }), "threads-chart", '', threadsMaxUsage, ticks, w, h, pad)}` : `
@@ -611,7 +618,7 @@ function renderTimeline(output: ProfilerOutput): void {
     ${ output.supportsStack ? `
       ${buildSvgChart(filtered.map((t: FilteredTimepoint): ChartPoint => {
         return {
-          date:  t.date,
+          milli: t.milli,
           value: t.stack
         }
       }), "stack-chart", '', stackMaxUsage, ticks, w, h, pad)}` : `

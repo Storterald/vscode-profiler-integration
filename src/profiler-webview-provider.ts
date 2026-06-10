@@ -44,11 +44,11 @@ export class ProfilerWebviewProvider implements vscode.WebviewViewProvider {
                         switch (data.type) {
                         case "ready":
                                 if (this._pendingData)
-                                        await this.updateFlamegraph(this._pendingData);
+                                        await this.updateView(this._pendingData);
                                 break;
                         case "file-loaded":
                                 if ((this._pendingData = await utils.unpack(Buffer.from(data.content))))
-                                        await this.updateFlamegraph(this._pendingData);
+                                        await this.updateView(this._pendingData);
                                 break;
                         case "invalid":
                                 await vscode.window.showErrorMessage("Error obtaining profiler output.");
@@ -57,7 +57,7 @@ export class ProfilerWebviewProvider implements vscode.WebviewViewProvider {
                 });
         }
 
-        public async updateFlamegraph(data: ProfilerOutput): Promise<void> {
+        public async updateView(data: ProfilerOutput): Promise<void> {
                 this._pendingData = data;
                 
                 if (this._view)

@@ -56,7 +56,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 return;
 
                         await utils.pack(context, root);
-                        await profilerWebview.updateFlamegraph(root);
+                        await profilerWebview.updateView(root);
                         vscode.commands.executeCommand("profiler.webview.focus");
                 } finally {
                         fs.rmSync(outDir, { recursive: true, force: true });

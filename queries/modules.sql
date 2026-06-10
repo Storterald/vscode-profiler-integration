@@ -1,2 +1,2 @@
-SELECT id AS moduleId, path AS modulePath
+SELECT id, path
 FROM Module

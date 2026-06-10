@@ -88,8 +88,8 @@ export class Perf implements IProfiler {
                 const data: string = fs.readFileSync(dataPath, "utf-8");
 
                 let root: ProfilerOutput = {
-                        exeName:       exeName,
-                        type:          " cycles",
+                        exeName:          exeName,
+                        type:             " cycles",
                         stackFrame: {
                                 name:     "all",
                                 value:    0,
@@ -97,28 +97,17 @@ export class Perf implements IProfiler {
                                 cpu:      undefined,
                                 children: []
                         },
-                        supportsCpu:   true,
-                        supportsHeap:  false,
-                        supportsStack: false,
-                        timepoints:    []
+                        supportsTimeline: true,
+                        supportsCpu:      true,
+                        supportsHeap:     false,
+                        supportsStack:    false,
+                        timepoints:       []
                 };
 
-                const dateStartString: string = "# captured on";
-                let dateStart: number         = data.indexOf(dateStartString) + dateStartString.length;
-                while (data[dateStart] === ' ')
-                        ++dateStart;
-                dateStart += 2; // ': '
-                const startString: string = data.substring(dateStart, data.indexOf('\n', dateStart));
-                const startTime: number   = new Date(startString).getTime();
-
-                function tod(seconds: number): Date {
-                        return new Date(startTime + Math.floor(seconds * 1000000));
-                }
-
                 const headerEndString: string = "#\n";
-                const headerEnd: number       = data.indexOf(headerEndString, dateStart + startString.length + 1);
+                const headerEnd: number       = data.indexOf(headerEndString);
 
-                const samples: Map<string, SampleData> = new Map();
+                const samples: { [key: string]: SampleData } = {};
                 for (let i: number = headerEnd + headerEndString.length; i < data.length;) {
                         const header: HeaderParseInfo = this._parseHeader(data, i);
                         i                             = header.newI;
@@ -130,31 +119,32 @@ export class Perf implements IProfiler {
                         }
 
                         const key: string        = `${header.header.thread}:${header.header.time}`;
-                        let existing: SampleData = samples.get(key) || { header: header.header };
+                        let existing: SampleData = samples[key] || { header: header.header };
                         if (header.type === "cycles:u")
                                 existing.cycles = header.value;
                         else // ref-cycles
                                 existing.refCycles = header.value;
 
                         if (header.type !== "cycles:u") {
-                                i = data.indexOf("\n\n", i) + 2;
-                                samples.set(key, existing);
+                                i            = data.indexOf("\n\n", i) + 2;
+                                samples[key] = existing;
                                 continue;
                         }
 
                         const callstack: CallstackParseInfo = this._parseCallstack(data, i);
                         existing.callstack                  = callstack.callstack;
                         i                                   = callstack.newI;
-                        samples.set(key, existing);
+                        samples[key]                        = existing;
                 }
 
                 const timepoints: Map<number, Timepoint> = new Map();
-                for (const sample of samples.values()) {
+                const minTime: number                    = Math.min(...Object.values(samples).map((s: SampleData): number => s.header.time))
+                for (const sample of Object.values(samples)) {
                         if (!sample.cycles || !sample.refCycles || !sample.callstack)
                                 continue;
 
                         const timepoint: Timepoint = {
-                                date:    tod(sample.header.time).toISOString(),
+                                milli:  Math.floor((sample.header.time - minTime) * 1000),
                                 points: {
                                         [sample.header.thread]: {
                                                 cpu:   sample.cycles / sample.refCycles * 100,
@@ -210,8 +200,8 @@ export class Perf implements IProfiler {
                                 cpu:    Number(headerParts[2].slice(1, -1)),
                                 time:   Number(headerParts[3].slice(0, -1))
                         },
-                        newI: i + header.length + 1,
-                        type: headerParts[5].slice(0, -1),
+                        newI:   i + header.length + 1,
+                        type:   headerParts[5].slice(0, -1),
                         value:  Number(headerParts[4])
                 };
         }

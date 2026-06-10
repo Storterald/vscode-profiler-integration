@@ -92,15 +92,19 @@ export class AMDuProf implements IProfiler {
                 await db.close();
 
                 const root: ProfilerOutput = {
-                        exeName:    exeName,
-                        type:       "s",
+                        exeName:       exeName,
+                        type:          " s",
                         stackFrame: {
                                 name:     "all",
                                 value:    0,
                                 thread:   undefined,
                                 cpu:      undefined,
                                 children: []
-                        }
+                        },
+                        supportsCpu:   false,
+                        supportsHeap:  false,
+                        supportsStack: false,
+                        timepoints:    []
                 };
 
                 for (const frames of callstack.values()) {

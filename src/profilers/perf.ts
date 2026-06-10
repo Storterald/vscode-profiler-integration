@@ -4,7 +4,26 @@ import * as path from "path";
 import * as vscode from "vscode";
 import * as utils from "../utils";
 import { ExtensionContext } from "vscode";
-import { IProfiler, ProfilerOutput, StackFrame } from "../iprofiler";
+import {IProfiler, ProfilerOutput, StackFrame, Timepoint} from "../iprofiler";
+
+interface SampleHeader {
+        name: string;
+        thread: number;
+        cpu: number;
+        time: number;
+}
+
+interface HeaderParseInfo {
+        header: SampleHeader;
+        newI:   number;
+        type:   string;
+        value:  number;
+}
+
+interface CallstackParseInfo {
+        callstack: string[];
+        newI:      number;
+}
 
 export class Perf implements IProfiler {
         public async profile(_: ExtensionContext, cli: string, cwd: string, outDir: string, exePath: string): Promise<ProfilerOutput | undefined> {
@@ -36,76 +55,190 @@ export class Perf implements IProfiler {
 
         private _getProfileCommand(cli: string, outFile: string, exe: string): string {
                 return `${cli} record ` +
-                        "-F 1000 " +
+                        "-F 20 " +
+                        "--sample-cpu " +
+                        "--stat " +
+                        // TODO: maybe run a memory profiler along this
+                        // "--sample-mem-info " +
                         "--call-graph fp " +
-                        "-e cycles:u " +
+                        "--running-time " +
+                        "-e '{cycles:u,ref-cycles}:S' " +
+                        /* TODO: requires sudo or low /proc/sys/kernel/perf_event_paranoid (0 or -1)
+                                "-e sched:sched_switch " +
+                                "-e sched:sched_wakeup" +
+                                "-e sched:sched_process_fork " +
+                                "-e sched:sched_process_exit " +
+                        */
                         `-o '${outFile}' ` +
                         `'${exe}'`;
         }
 
         private _getTranslateCommand(cli: string, inputFile: string, outFile: string): string {
-                return `${cli} script -i ${inputFile} > ${outFile}`;
+                return `${cli} script --header -i ${inputFile} > ${outFile}`;
         }
 
         private async _getRoot(dataPath: string, exeName: string): Promise<ProfilerOutput> {
-                const data: string      = fs.readFileSync(dataPath, "utf-8");
-                const samples: string[] = data.split("\n\n");
+                interface SampleData {
+                        header:     SampleHeader;
+                        cycles?:    number;
+                        refCycles?: number;
+                        callstack?: string[];
+                }
+
+                const data: string = fs.readFileSync(dataPath, "utf-8");
 
                 let root: ProfilerOutput = {
-                        exeName:    exeName,
-                        type:       " cycles",
+                        exeName:       exeName,
+                        type:          " cycles",
                         stackFrame: {
                                 name:     "all",
                                 value:    0,
                                 thread:   undefined,
                                 cpu:      undefined,
                                 children: []
-                        }
+                        },
+                        supportsCpu:   true,
+                        supportsHeap:  false,
+                        supportsStack: false,
+                        timepoints:    []
                 };
 
-                samples.forEach(sample => {
-                        const lines: string[] = sample.split("\n");
-                        const header: string  = lines[0].trim();
+                const dateStartString: string = "# captured on";
+                let dateStart: number         = data.indexOf(dateStartString) + dateStartString.length;
+                while (data[dateStart] === ' ')
+                        ++dateStart;
+                dateStart += 2; // ': '
+                const startString: string = data.substring(dateStart, data.indexOf('\n', dateStart));
+                const startTime: number   = new Date(startString).getTime();
 
-                        const headerParts: string[] = header.split(/\s+/);
-                        let value: number           = -1;
-                        for (let i = 1; i < headerParts.length; ++i) {
-                                if (headerParts[i] === "cycles:u:") {
-                                        value = parseInt(headerParts[i - 1]);
-                                        break;
-                                }
+                function tod(seconds: number): Date {
+                        return new Date(startTime + Math.floor(seconds * 1000000));
+                }
+
+                const headerEndString: string = "#\n";
+                const headerEnd: number       = data.indexOf(headerEndString, dateStart + startString.length + 1);
+
+                const samples: Map<string, SampleData> = new Map();
+                for (let i: number = headerEnd + headerEndString.length; i < data.length;) {
+                        const header: HeaderParseInfo = this._parseHeader(data, i);
+                        i                             = header.newI;
+
+                        if ((header.type !== "cycles:u" && header.type !== "ref-cycles")
+                            || header.header.name != exeName) {
+                                i = data.indexOf("\n\n", i) + 2;
+                                continue;
                         }
 
-                        if (value === -1)
-                                return
+                        const key: string        = `${header.header.thread}:${header.header.time}`;
+                        let existing: SampleData = samples.get(key) || { header: header.header };
+                        if (header.type === "cycles:u")
+                                existing.cycles = header.value;
+                        else // ref-cycles
+                                existing.refCycles = header.value;
+
+                        if (header.type !== "cycles:u") {
+                                i = data.indexOf("\n\n", i) + 2;
+                                samples.set(key, existing);
+                                continue;
+                        }
+
+                        const callstack: CallstackParseInfo = this._parseCallstack(data, i);
+                        existing.callstack                  = callstack.callstack;
+                        i                                   = callstack.newI;
+                        samples.set(key, existing);
+                }
+
+                const timepoints: Map<number, Timepoint> = new Map();
+                for (const sample of samples.values()) {
+                        if (!sample.cycles || !sample.refCycles || !sample.callstack)
+                                continue;
+
+                        const timepoint: Timepoint = {
+                                date:    tod(sample.header.time).toISOString(),
+                                points: {
+                                        [sample.header.thread]: {
+                                                cpu:   sample.cycles / sample.refCycles * 100,
+                                                heap:  0,
+                                                stack: 0
+                                        }
+                                }
+                        }
+                        const existing: Timepoint | undefined = timepoints.get(sample.header.time);
+                        if (existing)
+                                existing.points[sample.header.thread] = timepoint.points[sample.header.thread];
+
+                        timepoints.set(sample.header.time, existing || timepoint);
 
                         let current: StackFrame = root.stackFrame;
-                        current.value          += value;
-                        for (let i = lines.length - 1; i > 0; --i) {
-                                const lineParts: string[] = lines[i].trim().split(/\s+/);
-                                const name: string        = lineParts[1] === "[unknown]" ?
-                                        `unknown!:0x${lineParts[0]}` :
-                                        lineParts[1].split('+')[0];
-
-                                let tmp: StackFrame | undefined
-                                if ((tmp = current.children.find(v => v.name === name))) {
+                        current.value          += sample.cycles;
+                        for (const call of sample.callstack) {
+                                let tmp: StackFrame | undefined;
+                                if ((tmp = current.children.find((v: StackFrame): boolean => v.name === call))) {
                                         current = tmp;
                                 } else {
                                         const s: number = current.children.push({
-                                                name:     name,
+                                                name:     call,
                                                 value:    0,
-                                                thread:   "TODO-thread",
-                                                cpu:      "TODO-cpu",
+                                                thread:   sample.header.thread,
+                                                cpu:      sample.header.cpu,
                                                 children: []
                                         });
                                         current = current.children[s - 1];
                                 }
                                 
-                                current.value += value;
+                                current.value += sample.cycles;
                         }
-                })
+                }
+
+                root.timepoints = [...timepoints.entries()]
+                        .sort(([a], [b]) => a - b)
+                        .map(([, v]) => v);
 
                 return root;
+        }
+
+        private _parseHeader(data: string, i: number): HeaderParseInfo {
+                // TODO: maybe avoid reallocs, just linear parsing
+
+                const header: string        = data.substring(i, data.indexOf('\n', i));
+                const headerParts: string[] = header.trim().split(/\s+/);
+
+                return {
+                        header: {
+                                name:   headerParts[0],
+                                thread: Number(headerParts[1]),
+                                cpu:    Number(headerParts[2].slice(1, -1)),
+                                time:   Number(headerParts[3].slice(0, -1))
+                        },
+                        newI: i + header.length + 1,
+                        type: headerParts[5].slice(0, -1),
+                        value:  Number(headerParts[4])
+                };
+        }
+
+        private _parseCallstack(data: string, i: number): CallstackParseInfo {
+                // TODO: maybe avoid reallocs, just linear parsing
+
+                const callstack: string = data.substring(i, data.indexOf("\n\n", i));
+                const calls: string[]   = callstack.split('\n');
+
+                let stack: string[] = [];
+                for (const call of calls) {
+                        const line: string         = call.trim();
+                        const addressEnd: number   = line.indexOf(' ');
+                        const address: string      = line.substring(0, addressEnd);
+                        const pathBegin: number    = line.lastIndexOf('(');
+                        const functionName: string = line.substring(addressEnd + 1, pathBegin - 1);
+
+                        stack.push(functionName === "[unknown]" ?
+                                `unknown!:0x${address}` :
+                                functionName.split('+')[0]);
+                }
+
+                return {
+                        callstack: stack.reverse(),
+                        newI: i + callstack.length + 2
+                }
         }
 
 }

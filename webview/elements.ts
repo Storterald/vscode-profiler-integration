@@ -55,7 +55,6 @@ class HTMLResizableGridElement extends HTMLElement {
                                 return;
 
                         const gutter: Element | null = (e.target as HTMLElement).closest(".gutter");
-                        console.log(gutter);
                         if (this.getAttribute("is-resizing") === "true"
                             || !gutter || !this.ownedGutters.includes(gutter as HTMLElement))
                                 return;
@@ -119,7 +118,6 @@ class HTMLResizableGridElement extends HTMLElement {
                         child.onpointerdown = pointerDown;
                 }
 
-                console.log(this.ownedGutters);
                 frToCSS();
                 window.dispatchEvent(new Event("resize"));
         }
@@ -136,21 +134,19 @@ class HTMLFunctionTooltipElement extends HTMLElement {
                 this.innerHTML = `
 <div class="tooltip-time tooltip-fire">
         <p id="function-name" class="tooltip-function"></p>
-        <div style="flex-grow: 1"></div>
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" id="fire-icon" viewBox="0 0 16 16">
-                    <path d="M8 16c3.314 0 6-2 6-5.5 0-1.5-.5-4-2.5-6 .25 1.5-1.25 2-1.25 2C11 4 9 .5 6 0c.357 2 .5 4-2 6-1.25 1-2 2.729-2 4.5C2 14 4.686 16 8 16m0-1c-1.657 0-3-1-3-2.75 0-.75.25-2 1.25-3C6.125 10 7 10.5 7 10.5c-.375-1.25.5-3.25 2-3.5-.179 1-.25 2 1 3 .625.5 1 1.364 1 2.25C11 14 9.657 15 8 15"/>
-                </svg>
-                <p id="value-count-label"></p>
-        </div>
-        <div class="tooltip-data">
-                <p id="absolute-percentage-label" class="tooltip-percentage"></p>
-                <p>of all</p>
-                <div></div>
-                <div></div>
-                <p id="relative-percentage-label" class="tooltip-percentage"></p>
-                <p>of</p>
-                <p id="parent-name" class="tooltip-function"></p>
-        </div>
+        <div class="tooltip-text-spacer"></div>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" id="fire-icon" viewBox="0 0 16 16">
+            <path d="M8 16c3.314 0 6-2 6-5.5 0-1.5-.5-4-2.5-6 .25 1.5-1.25 2-1.25 2C11 4 9 .5 6 0c.357 2 .5 4-2 6-1.25 1-2 2.729-2 4.5C2 14 4.686 16 8 16m0-1c-1.657 0-3-1-3-2.75 0-.75.25-2 1.25-3C6.125 10 7 10.5 7 10.5c-.375-1.25.5-3.25 2-3.5-.179 1-.25 2 1 3 .625.5 1 1.364 1 2.25C11 14 9.657 15 8 15"/>
+        </svg>
+        <p id="value-count-label"></p>
+</div>
+<div class="tooltip-data">
+        <p id="absolute-percentage-label" class="tooltip-percentage"></p>
+        <p>of all</p>
+        <div class="tooltip-text-spacer"></div>
+        <p id="relative-percentage-label" class="tooltip-percentage"></p>
+        <p>of</p>
+        <p id="parent-name" class="tooltip-function"></p>
 </div>`
         }
 
@@ -180,13 +176,12 @@ class HTMLFunctionTooltipElement extends HTMLElement {
                 relative.textContent   = `${relPercentage.toFixed(2)}%`;
                 parentName.textContent = parent.name;
 
-                this.style.opacity = "1";
                 this.style.display = "block";
         }
 
 
         move(x: number, y: number): void {
-                const rect: DOMRect = mainElement.getBoundingClientRect();
+                const rect: DOMRect = this.parentElement!.getBoundingClientRect();
                 if (rect.right - x < rect.width * 0.5) {
                         this.style.right = `${rect.width - x + 15}px`;
                         this.style.left  = "";
@@ -197,15 +192,14 @@ class HTMLFunctionTooltipElement extends HTMLElement {
 
                 if (rect.bottom - y < rect.height * 0.2) {
                         this.style.bottom = `${rect.height - y + 10}px`
-                        this.style.top     = ""
+                        this.style.top     = "";
                 } else {
                         this.style.top    = `${y - 10}px`;
-                        this.style.bottom = ""
+                        this.style.bottom = "";
                 }
         }
 
         hide(): void {
-                this.style.opacity = "0";
                 this.style.display = "none";
         }
 }

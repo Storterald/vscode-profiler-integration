@@ -17,8 +17,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.window.registerWebviewViewProvider("profiler.webview", profilerWebview);
 
-        await profilerWebview.updateFlamegraph(JSON.parse(fs.readFileSync("C:\\Users\\maggioli\\Downloads\\2026-06-08_20-52-50.json").toString("utf-8")));
-
         context.subscriptions.push(vscode.commands.registerCommand("profiler.profile-project", async (): Promise<void> => {
                 // TODO support for single file applications
                 const exe: string = await vscode.commands.executeCommand("cmake.getLaunchTargetPath");

@@ -57,15 +57,19 @@ export class IntelVtune implements IProfiler {
                 const callstacks: string = fs.readFileSync(path.join(outDir, "callstacks.csv"), "utf8");
 
                 const root: ProfilerOutput = {
-                        exeName:    exeName,
-                        type:       "s",
+                        exeName:       exeName,
+                        type:          " s",
                         stackFrame: {
                                 name:     "all",
                                 value:    0,
                                 thread:   undefined,
                                 cpu:      undefined,
                                 children: []
-                        }
+                        },
+                        supportsCpu:   false,
+                        supportsHeap:  false,
+                        supportsStack: false,
+                        timepoints:    []
                 };
 
                 const callstacksData: string[][] = csv.parse(callstacks, { delimiter: ",", skip_empty_lines: true  });

@@ -1,21 +1,41 @@
 // @ts-ignore
 const vscode: any = acquireVsCodeApi();
 
+interface TimepointThreadData {
+        cpu:     number;
+        heap:    number;
+        stack:   number;
+}
+
+interface Timepoint {
+        date:   string;
+        points: { [thread: string]: TimepointThreadData }
+}
+
 interface ProfilerOutput {
-        exeName:    string;
-        type:       string;
-        stackFrame: StackFrame;
+        exeName:         string;
+        type:            string;
+        stackFrame:      StackFrame;
+        supportsCpu:     boolean;
+        supportsHeap:    boolean;
+        supportsStack:   boolean;
+        timepoints:      Timepoint[];
 }
 
 interface StackFrameBase {
-        name:  string;
-        value: number;
+        name:     string;
+        value:    number;
 }
 
 interface StackFrame extends StackFrameBase {
-        thread:   string | undefined;
-        cpu:      string | undefined;
+        thread:   number | string | undefined;
+        cpu:      number | string | undefined;
         children: StackFrame[];
+}
+
+interface ChartPoint {
+        date:  Date;
+        value: number;
 }
 
 type View = "flame-graph" | "calltree" | "methods" | "timeline";
@@ -35,6 +55,7 @@ const chevrons: string = `
         </svg>
 </div>`;
 
+let currentThread: string                   = "All threads";
 let currentData: ProfilerOutput | undefined = undefined;
 let currentView: View                       = "flame-graph";
 
@@ -50,11 +71,11 @@ document.querySelectorAll(".titlebar-tab").forEach((tab: Element): void => {
                 tab.classList.add("active");
                 currentView = (tab as HTMLElement).dataset.view as View;
                 if (currentData)
-                        renderCurrentView();
+                        renderCurrentView(currentData!);
         });
 });
 
-document.querySelector(".input-file")!.addEventListener("change", async (e: Event): Promise<void> => {
+document.getElementById("load-vscprof")!.addEventListener("change", async (e: Event): Promise<void> => {
         const file: File | undefined = (e.target as HTMLInputElement | null)?.files?.[0];
         if (!file)
                 return;
@@ -73,24 +94,22 @@ function getCssVariable(name: string): string {
         return window.getComputedStyle(document.body).getPropertyValue(name);
 }
 
-function renderCurrentView(): void {
+function renderCurrentView(output: ProfilerOutput): void {
         mainElement.innerHTML = "";
         mainElement.className = `${currentView}-container`;
 
-        renderThreadList(currentData!);
-
         switch (currentView) {
                 case "flame-graph":
-                        renderFlamegraph(currentData!);
+                        renderFlamegraph(output);
                         break;
                 case "calltree":
-                        renderCallTree(currentData!);
+                        renderCallTree(output);
                         break;
                 case "methods":
-                        renderMethodList(currentData!);
+                        renderMethodList(output);
                         break;
                 case "timeline":
-                        renderTimeline(currentData!);
+                        renderTimeline(output);
                         break;
         }
 }
@@ -105,7 +124,7 @@ function renderThreadList(output: ProfilerOutput): void {
 
         const threads: { [thread: string]: any } = {};
         function addThreads(frame: StackFrame): void {
-                if (frame.thread)
+                if (frame.thread !== undefined)
                         threads[frame.thread] = {};
                 for (const child of frame.children)
                         addThreads(child);
@@ -130,8 +149,8 @@ function renderThreadList(output: ProfilerOutput): void {
                 current = event.target as HTMLElement;
                 current.classList.add("active");
 
-                const thread: string = current.textContent;
-                // TODO: thread selection logic
+                currentThread = current.textContent;
+                renderCurrentView(currentData!);  // TODO: implement thread only views in flame graph and call tree
         }
 
         for (const child of threadSelector.children)
@@ -325,9 +344,10 @@ function renderCallTree(output: ProfilerOutput): void {
 
 function renderMethodList(output: ProfilerOutput): void {
         interface Method {
-                name:  string;
-                value: number;
-                own:   number;
+                name:   string;
+                value:  number;
+                own:    number;
+                thread: string | undefined;
         }
 
         const root: StackFrame = output.stackFrame;
@@ -359,20 +379,24 @@ function renderMethodList(output: ProfilerOutput): void {
         ownSampleText.textContent           = "Own Samples";
         ownSamplesCount.appendChild(ownSampleText);
 
-        const nodes: Method[] = [];
+        let nodes: Method[] = [];
         function addNode(node: StackFrame): void {
                 nodes.push({
-                        name:  node.name,
-                        value: node.value,
-                        own:   node.value - node.children.reduce((sum: number, child: StackFrame): number => sum + child.value, 0)
+                        name:   node.name,
+                        value:  node.value,
+                        own:    node.value - node.children.reduce((sum: number, child: StackFrame): number => sum + child.value, 0),
+                        thread: node.thread?.toString()
                 });
                 node.children.forEach(addNode);
         }
 
         root.children.forEach(addNode);
+        if (currentThread !== "All threads")
+                nodes = nodes.filter((node: Method): boolean => node.thread === currentThread);
+
         nodes.sort((a: Method, b: Method): number => b.value - a.value);
 
-        const maxOwnValue: number = Math.max(...nodes.map(node => node.own));
+        const maxOwnValue: number = Math.max(...nodes.map((node: Method): number => node.own));
         nodes.forEach((node: Method): void => {
                 const name: HTMLParagraphElement = document.createElement("p");
                 name.textContent                 = node.name;
@@ -410,48 +434,190 @@ function renderMethodList(output: ProfilerOutput): void {
         });
 }
 
+function buildSvgChart(timepoints: ChartPoint[], id: string, kind: string, maxY: number, ticks: number, w: number, h: number, pad: { top: number, bottom: number, right: number, left: number }): string {
+        const innerW: number = w - pad.left - pad.right;
+        const innerH: number = h - pad.top - pad.bottom;
+        const minT: number   = timepoints[0].date.getTime();
+        const maxT: number   = timepoints[timepoints.length - 1].date.getTime();
+
+        function toX(d: Date): number {
+                return pad.left + ((d.getTime() - minT) / (maxT - minT)) * innerW;
+        }
+
+        function toY (pct: number): number {
+                return pad.top + innerH - (pct / maxY) * innerH;
+        }
+
+        const firstX: string = toX(timepoints[0].date).toFixed(1);
+        const lastX: string  = toX(timepoints[timepoints.length - 1].date).toFixed(1);
+        const baseY: string  = toY(0).toFixed(1);
+
+        const points: string = timepoints
+                .map((tp: ChartPoint): string => `${toX(tp.date).toFixed(1)},${toY(tp.value).toFixed(1)}`)
+                .join(' ');
+        const line: string   = `<polygon points="${firstX},${baseY} ${points} ${lastX},${baseY}" id="${id}" class="timeline-chart"></polygon>`;
+
+        const yLinesCount: number    = Math.min(maxY, 4);
+        const yLinesValues: number[] = [];
+        for (let i: number = 0; i <= yLinesCount; ++i)
+                yLinesValues.push(i / yLinesCount * maxY);
+
+        const yGridLines: string = yLinesValues.map((v: number): string => {
+                const y: string = toY(v).toFixed(1);
+                return `<line x1="${pad.left}" y1="${y}" x2="${pad.left + innerW}" y2="${y}" class="timeline-chart-line"></line>`;
+        }).join('\n');
+
+        const yTicks: string = yLinesValues.map((v: number): string => {
+                const y: string = toY(v).toFixed(1);
+                return `<text x="${pad.left - 6}" y="${y}" text-anchor="end" dominant-baseline="middle" class="timeline-chart-text">${v}${kind}</text>`;
+        }).join('\n');
+
+        const minSec: number    = Math.ceil(minT / 1000);
+        const maxSec: number    = Math.floor(maxT / 1000);
+        const totalSecs: number = maxSec - minSec;
+        const step: number      = Math.max(1, Math.round(totalSecs / ticks));
+
+        const secondTicks: number[] = [];
+        for (let s: number = minSec; s <= maxSec; s += step)
+                secondTicks.push(s * 1000);
+
+        const xGridLines: string = secondTicks.map((t: number): string => {
+                const x: string = (pad.left + ((t - minT) / (maxT - minT)) * innerW).toFixed(1);
+                return `<line x1="${x}" y1="${pad.top}" x2="${x}" y2="${pad.top + innerH}" class="timeline-chart-line"></line>`;
+        }).join('\n');
+
+        const xTicks: string = secondTicks.map((t: number): string => {
+                const x: string     = (pad.left + ((t - minT) / (maxT - minT)) * innerW).toFixed(1);
+                const label: string = new Date(t).toLocaleTimeString();
+                return `<text x="${x}" y="${pad.top + innerH + 20}" text-anchor="middle" class="timeline-chart-text">${label}</text>`;
+        }).join('\n');
+
+        return `
+<svg xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 ${w} ${h}"
+    preserveAspectRatio="none"
+    style="width:100%; height:100%;">
+  ${yGridLines}
+  ${xGridLines}
+  ${line}
+  <rect x="${pad.left}" y="${pad.top}" width="${innerW}" height="${innerH}" fill="none" stroke="#ccc" stroke-width="0.5"/>
+  ${xTicks}
+  ${yTicks}
+</svg>`;
+}
+
 function renderTimeline(output: ProfilerOutput): void {
-        let cpuMaxUsage: number     = 0;
-        let heapMaxUsage: number    = 0;
-        let threadsMaxUsage: number = 0;
-        let stackMaxUsage: number   = 0;
+        const ticks: number = 5;
+        const w: number     = 500;
+        const h: number     = 300;
+        const pad           = { top: 20, bottom: 30, right: 20, left: 40 };
+
+        // TODO: sometimes CPU usage for a thread is over 100%???
+
+        interface FilteredTimepoint {
+                date:    Date;
+                cpu:     number;
+                heap:    number;
+                stack:   number;
+        }
+
+        const threadsMaxUsage: number = Math.max(...output.timepoints.map((t: Timepoint): number => Object.keys(t.points).length));
+
+        let filtered: FilteredTimepoint[];
+        if (currentThread === "All threads") {
+                filtered = output.timepoints.map((t: Timepoint): FilteredTimepoint => {
+                        return {
+                                date:  new Date(t.date),
+                                cpu:   Object.values(t.points).reduce((s: number, v: TimepointThreadData): number => s + v.cpu, 0) / threadsMaxUsage,
+                                heap:  Object.values(t.points).reduce((s: number, v: TimepointThreadData): number => s + v.heap, 0),
+                                stack: Object.values(t.points).reduce((s: number, v: TimepointThreadData): number => s + v.stack, 0)
+                        }
+                });
+        } else {
+                filtered = output.timepoints
+                        .filter((t: Timepoint): boolean => currentThread in t.points)
+                        .map((t: Timepoint): FilteredTimepoint => {
+                                return {
+                                        date:  new Date(t.date),
+                                        cpu:   t.points[currentThread].cpu,
+                                        heap:  t.points[currentThread].heap,
+                                        stack: t.points[currentThread].stack
+                                }
+                        });
+        }
+
+        const cpuMaxUsage: number   = Math.max(...filtered.map((t: FilteredTimepoint): number => t.cpu));
+        const heapMaxUsage: number  = Math.max(...filtered.map((t: FilteredTimepoint): number => t.heap));
+        const stackMaxUsage: number = Math.max(...filtered.map((t: FilteredTimepoint): number => t.stack));
 
         mainElement.innerHTML = `
 <div id="cpu-container" class="timeline-grid-element">
   <div class="timeline-container-title">
     <p>CPU</p>
-    <p>${cpuMaxUsage}</p>
+    <p>${cpuMaxUsage.toFixed(2)}%</p>
   </div>
-  <svg class="timeline-graph">
-  
-  </svg>
+  <div class="chart-container">
+    ${ output.supportsCpu ? `
+      ${buildSvgChart(filtered.map((t: FilteredTimepoint): ChartPoint => {
+        return {
+          date: t.date,
+          value: t.cpu
+        }
+      }), "cpu-chart", '%', 100, ticks, w, h, pad)}` : `
+      <p>Profiler does not support CPU Usage</p>`
+    }
+  </div>
 </div>
 <div id="heap-container" class="timeline-grid-element">
   <div class="timeline-container-title">
     <p>Heap</p>
-    <p>${heapMaxUsage}</p>
+    <p>${heapMaxUsage.toFixed(2)}MB</p>
   </div>
-  <svg class="timeline-graph">
-  
-  </svg>
+  <div class="chart-container">
+    ${ output.supportsHeap ? `
+      ${buildSvgChart(filtered.map((t: FilteredTimepoint): ChartPoint => {
+        return {
+          date:  t.date,
+          value: t.heap
+        }
+      }), "heap-chart", '', heapMaxUsage, ticks, w, h, pad)}` : `
+      <p>Profiler does not support Heap Usage</p>`
+    }
+  </div>
 </div>
 <div id="threads-container" class="timeline-grid-element">
   <div class="timeline-container-title">
     <p>Threads</p>
     <p>${threadsMaxUsage}</p>
   </div>
-  <svg class="timeline-graph">
-  
-  </svg>
+  <div class="chart-container">
+    ${ output.supportsCpu || output.supportsHeap || output.supportsStack ? `
+      ${buildSvgChart(output.timepoints.map((t: Timepoint): ChartPoint => {
+        return {
+          date:  new Date(t.date),
+          value: Object.keys(t.points).length
+        }
+      }), "threads-chart", '', threadsMaxUsage, ticks, w, h, pad)}` : `
+      <p>Profiler does not support Heap Usage</p>`
+    }
+  </div>
 </div>
 <div id="stack-container" class="timeline-grid-element">
   <div class="timeline-container-title">
     <p>Non-Heap Memory</p>
-    <p>${stackMaxUsage}</p>
+    <p>${stackMaxUsage}MB</p>
   </div>
-  <svg class="timeline-graph">
-  
-  </svg>
+  <div class="chart-container">
+    ${ output.supportsStack ? `
+      ${buildSvgChart(filtered.map((t: FilteredTimepoint): ChartPoint => {
+        return {
+          date:  t.date,
+          value: t.stack
+        }
+      }), "stack-chart", '', stackMaxUsage, ticks, w, h, pad)}` : `
+      <p>Profiler does not support Stack Usage</p>`
+    }
+  </div>
 </div>`;
 }
 
@@ -461,8 +627,12 @@ window.addEventListener("message", (event: MessageEvent<ProfilerOutput>): void =
         }
 
         if (event.data && isValidProfilerOutput(event.data)) {
+                document.getElementById("input-container")!.classList.add("hidden");
+                document.getElementById("editor")!.classList.remove("hidden");
+
                 currentData = event.data;
-                renderCurrentView();
+                renderThreadList(currentData!);
+                renderCurrentView(currentData!);
         } else {
                 console.error("[Webview] Invalid data format:", event.data);
                 vscode.postMessage({ type: "invalid" });

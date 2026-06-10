@@ -35,6 +35,10 @@ body {
     height: 100%;
 }
 
+.hidden {
+    display: none !important;
+}
+
 /*
     ----- TITLEBAR -----
 */
@@ -87,6 +91,15 @@ body {
     ----- FILE INPUT -----
 */
 
+
+#input-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
 .input-label {
     display: flex;
     align-items: center;
@@ -112,7 +125,7 @@ body {
 }
 
 #load-vscprof {
-    opacity: 0;
+    display: none;
     z-index: -1;
 }
 
@@ -201,7 +214,6 @@ body {
 
 function-tooltip {
     display: none;
-    opacity: 0;
     position: fixed;
     z-index: 1000;
     pointer-events: none;
@@ -209,15 +221,17 @@ function-tooltip {
     background: var(--vscode-editorWidget-background);
     color: var(--vscode-editorWidget-foreground);
     border: 1px solid var(--vscode-editorWidget-border);
-    font-size: var(--vscode-editor-font-size);
-    font-weight: 500;
+    font-size: 0.9rem;
+    font-weight: 400;
     box-shadow: 0 2px 8px var(--vscode-widget-shadow);
     transition: opacity 0.2s;
     border-radius: 3px;
+    max-width: 50%;
 }
 
 function-tooltip p {
     margin: 0;
+    white-space: nowrap;
 }
 
 .tooltip-fire {
@@ -243,10 +257,16 @@ function-tooltip p {
 .tooltip-function {
     font-family: var(--vscode-editor-font-family);
     font-weight: bold;
+    overflow: hidden;
 }
 
 .tooltip-percentage {
     font-weight: bold;
+}
+
+.tooltip-text-spacer {
+    flex-grow: 1;
+    min-width: 10%;
 }
 
 /*
@@ -355,6 +375,7 @@ resizable-grid > * {
 .methods p {
     font-weight: 300;
     margin: 0 0 0 0.3rem;
+    overflow: hidden;
 }
 
 .methods > * {
@@ -367,13 +388,12 @@ resizable-grid > * {
     border-bottom: 1px solid var(--vscode-editorGroupHeader-tabsBorder);
     font-size: 0.9rem;
     font-weight: 400;
+    margin-top: 0.15rem;
 }
 
 .method-bar {
     position: relative;
     align-content: center;
-    background-color: var(--vscode-sideBar-background);
-    border: 1px solid var(--vscode-sideBar-background);
 }
 
 .method-bar-bg {
@@ -426,9 +446,7 @@ resizable-grid > * {
 }
 
 .timeline-grid-element {
-    display: flex;
-    flex-direction: column;
-    margin: 2.5%;
+    padding: 2.5%;
     border: 1px solid var(--vscode-editorWidget-border);
 }
 
@@ -436,6 +454,7 @@ resizable-grid > * {
     display: flex;
     flex-direction: row;
     justify-content: space-between;
+    height: 10%;
 }
 
 .timeline-container-title > p {
@@ -443,6 +462,50 @@ resizable-grid > * {
     font-weight: 500;
 }
 
+.chart-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    height: 90%;
+    width: 100%;
+}
+
 .timeline-graph {
     margin: 0.2rem 0.4rem;
+    width: 100%;
+    height: 100%;
+}
+
+.timeline-chart-text {
+    fill: var(--vscode-foreground);
+    font-size: 10px;
+}
+
+.timeline-chart-line {
+    stroke-width: 0.5;
+    stroke: var(--vscode-editorGroup-border);
+}
+
+.timeline-chart {
+    fill: var(--chart-fill);
+    stroke: var(--chart-fill);
+    fill-opacity: 0.5;
+    stroke-width: 2;
+}
+
+#cpu-chart {
+    --chart-fill: #4c8041;
+}
+
+#heap-chart {
+    --chart-fill: #4382e9;
+}
+
+#threads-chart {
+    --chart-fill: #d74845;
+}
+
+#stack-chart {
+    --chart-fill: #6e537e;
 }

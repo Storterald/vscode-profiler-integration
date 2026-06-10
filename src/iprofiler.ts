@@ -1,16 +1,32 @@
 import { ExtensionContext } from "vscode";
 
+export interface Timepoint {
+        date:   string;
+        points: {
+                [key: string]: {
+                        cpu:     number;
+                        heap:    number;
+                        stack:   number;
+                }
+        }
+
+}
+
 export interface ProfilerOutput {
-        exeName:    string;
-        type:       string;
-        stackFrame: StackFrame;
+        exeName:         string;
+        type:            string;
+        stackFrame:      StackFrame;
+        supportsCpu:     boolean;
+        supportsHeap:    boolean;
+        supportsStack:   boolean;
+        timepoints:      Timepoint[];
 }
 
 export interface StackFrame {
         name:     string;
         value:    number;
-        thread:   string | undefined;
-        cpu:      string | undefined;
+        thread:   number | string | undefined;
+        cpu:      number | string | undefined;
         children: StackFrame[];
 }
 

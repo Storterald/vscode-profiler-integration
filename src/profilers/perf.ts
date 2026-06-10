@@ -153,6 +153,7 @@ export class Perf implements IProfiler {
                                         }
                                 }
                         }
+
                         const existing: Timepoint | undefined = timepoints.get(sample.header.time);
                         if (existing)
                                 existing.points[sample.header.thread] = timepoint.points[sample.header.thread];

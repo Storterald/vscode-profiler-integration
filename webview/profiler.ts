@@ -435,64 +435,65 @@ function renderMethodList(output: ProfilerOutput): void {
         });
 }
 
-function buildSvgChart(timepoints: ChartPoint[], id: string, kind: string, maxY: number, ticks: number, w: number, h: number, pad: { top: number, bottom: number, right: number, left: number }): string {        
+function mean(values: number[]): number {
+        return values.reduce((sum: number, v: number): number => sum + v, 0) / values.length;
+}
+
+function buildSvgChart(timepoints: ChartPoint[], id: string, kind: string, maxY: number, w: number, h: number, pad: { top: number, bottom: number, right: number, left: number }): string {
         const innerW: number = w - pad.left - pad.right;
         const innerH: number = h - pad.top - pad.bottom;
         const minT: number   = timepoints[0].milli;
         const maxT: number   = timepoints[timepoints.length - 1].milli;
-        // TODO: if minT === maxT
 
-        console.log(timepoints)
+        const startX: number = pad.left;
+        const endX: number   = w - pad.right;
+        const startY: number = h - pad.bottom;
 
-        function toX(milli: number): number {
-                return pad.left + ((milli - minT) / (maxT - minT)) * innerW;
+        let line: string;
+        if (maxT === minT) {
+                const usage: number = mean(timepoints.map((v: ChartPoint): number => v.value)) / maxY;
+                const y: number     = pad.top + innerH - usage * innerH;
+                line                = `<polygon points="${startX},${startY} ${startX},${y} ${endX},${y} ${endX},${startY}" id="${id}" class="timeline-chart"></polygon>`;
+        } else {
+                function toX(milli: number): number {
+                        return pad.left + ((milli - minT) / (maxT - minT)) * innerW;
+                }
+
+                function toY(pct: number): number {
+                        return pad.top + innerH - (pct / maxY) * innerH;
+                }
+
+                const points: string = timepoints
+                        .map((tp: ChartPoint): string => `${toX(tp.milli).toFixed(1)},${toY(tp.value).toFixed(1)}`)
+                        .join(' ');
+                line                 = `<polygon points="${startX},${startY} ${points} ${endX},${startY}" id="${id}" class="timeline-chart"></polygon>`;
         }
-
-        function toY (pct: number): number {
-                return pad.top + innerH - (pct / maxY) * innerH;
-        }
-
-        const firstX: string = toX(timepoints[0].milli).toFixed(1);
-        const lastX: string  = toX(timepoints[timepoints.length - 1].milli).toFixed(1);
-        const baseY: string  = toY(0).toFixed(1);
-
-        const points: string = timepoints
-                .map((tp: ChartPoint): string => `${toX(tp.milli).toFixed(1)},${toY(tp.value).toFixed(1)}`)
-                .join(' ');
-        const line: string   = `<polygon points="${firstX},${baseY} ${points} ${lastX},${baseY}" id="${id}" class="timeline-chart"></polygon>`;
 
         const yLinesCount: number    = Math.min(maxY, 4);
         const yLinesValues: number[] = [];
         for (let i: number = 0; i <= yLinesCount; ++i)
-                yLinesValues.push(i / yLinesCount * maxY);
+                yLinesValues.push(i / yLinesCount);
 
-        const yGridLines: string = yLinesValues.map((v: number): string => {
-                const y: string = toY(v).toFixed(1);
+        const yGridLines: string = yLinesValues.map((perc: number): string => {
+                const y: number = pad.top + innerH - perc * innerH;
                 return `<line x1="${pad.left}" y1="${y}" x2="${pad.left + innerW}" y2="${y}" class="timeline-chart-line"></line>`;
         }).join('\n');
 
-        const yTicks: string = yLinesValues.map((v: number): string => {
-                const y: string = toY(v).toFixed(1);
+        const yTicks: string = yLinesValues.map((perc: number): string => {
+                const y: number = pad.top + innerH - perc * innerH;
+                const v: number = perc * maxY;
                 return `<text x="${pad.left - 6}" y="${y}" text-anchor="end" dominant-baseline="middle" class="timeline-chart-text">${v}${kind}</text>`;
         }).join('\n');
 
-        const minSec: number    = Math.ceil(minT / 1000);
-        const maxSec: number    = Math.floor(maxT / 1000);
-        const totalSecs: number = maxSec - minSec;
-        const step: number      = Math.max(1, Math.round(totalSecs / ticks));
-
-        const secondTicks: number[] = [];
-        for (let s: number = minSec; s <= maxSec; s += step)
-                secondTicks.push(s * 1000);
-
-        const xGridLines: string = secondTicks.map((t: number): string => {
-                const x: string = (pad.left + ((t - minT) / (maxT - minT)) * innerW).toFixed(1);
+        const xGridLines: string = [ 0.25, 0.5, 0.75 ].map((perc: number): string => {
+                const x: number = pad.left + innerW * perc;
                 return `<line x1="${x}" y1="${pad.top}" x2="${x}" y2="${pad.top + innerH}" class="timeline-chart-line"></line>`;
         }).join('\n');
 
-        const xTicks: string = secondTicks.map((t: number): string => {
-                const x: string     = (pad.left + ((t - minT) / (maxT - minT)) * innerW).toFixed(1);
-                const label: string = `${Math.floor(t / 60000)}:${Math.floor((t % 60000) / 1000.0)}.${t % 1000}`;
+        const xTicks: string = [ 0, 0.25, 0.5, 0.75, 1 ].map((perc: number): string => {
+                const x: number     = pad.left + innerW * perc;
+                const t: number     = Math.floor(maxT * perc);
+                const label: string = `${Math.floor(t / 60000)}:${Math.floor((t % 60000) / 1000.0)}.${(t % 1000).toString().padStart(3, '0')}`;
                 return `<text x="${x}" y="${pad.top + innerH + 20}" text-anchor="middle" class="timeline-chart-text">${label}</text>`;
         }).join('\n');
 
@@ -514,10 +515,9 @@ function renderTimeline(output: ProfilerOutput): void {
         if (!output.supportsTimeline)
                 return;
 
-        const ticks: number = 5;
-        const w: number     = 500;
-        const h: number     = 300;
-        const pad           = { top: 20, bottom: 30, right: 20, left: 40 };
+        const w: number = 500;
+        const h: number = 300;
+        const pad       = { top: 20, bottom: 30, right: 20, left: 40 };
 
         // TODO: sometimes CPU usage for a thread is over 100%???
 
@@ -553,7 +553,7 @@ function renderTimeline(output: ProfilerOutput): void {
                         });
         }
 
-        const cpuMaxUsage: number   = output.supportsCpu ? Math.max(...filtered.map((t: FilteredTimepoint): number => t.cpu)) : 0;
+        const cpuMeanUsage: number  = output.supportsCpu ? mean(filtered.map((t: FilteredTimepoint): number => t.cpu)) : 0;
         const heapMaxUsage: number  = output.supportsHeap ? Math.max(...filtered.map((t: FilteredTimepoint): number => t.heap)) : 0;
         const stackMaxUsage: number = output.supportsStack ? Math.max(...filtered.map((t: FilteredTimepoint): number => t.stack)) : 0;
 
@@ -561,7 +561,7 @@ function renderTimeline(output: ProfilerOutput): void {
 <div id="cpu-container" class="timeline-grid-element">
   <div class="timeline-container-title">
     <p>CPU</p>
-    <p>${cpuMaxUsage.toFixed(2)}%</p>
+    <p>${cpuMeanUsage.toFixed(2)}%</p>
   </div>
   <div class="chart-container">
     ${ output.supportsCpu ? `
@@ -570,7 +570,7 @@ function renderTimeline(output: ProfilerOutput): void {
           milli: t.milli,
           value: t.cpu
         }
-      }), "cpu-chart", '%', 100, ticks, w, h, pad)}` : `
+      }), "cpu-chart", '%', 100, w, h, pad)}` : `
       <p>Profiler does not support CPU Usage</p>`
     }
   </div>
@@ -587,7 +587,7 @@ function renderTimeline(output: ProfilerOutput): void {
           milli: t.milli,
           value: t.heap
         }
-      }), "heap-chart", '', heapMaxUsage, ticks, w, h, pad)}` : `
+      }), "heap-chart", '', heapMaxUsage, w, h, pad)}` : `
       <p>Profiler does not support Heap Usage</p>`
     }
   </div>
@@ -604,7 +604,7 @@ function renderTimeline(output: ProfilerOutput): void {
           milli: t.milli,
           value: Object.keys(t.points).length
         }
-      }), "threads-chart", '', threadsMaxUsage, ticks, w, h, pad)}` : `
+      }), "threads-chart", '', threadsMaxUsage, w, h, pad)}` : `
       <p>Profiler does not support Heap Usage</p>`
     }
   </div>
@@ -621,7 +621,7 @@ function renderTimeline(output: ProfilerOutput): void {
           milli: t.milli,
           value: t.stack
         }
-      }), "stack-chart", '', stackMaxUsage, ticks, w, h, pad)}` : `
+      }), "stack-chart", '', stackMaxUsage, w, h, pad)}` : `
       <p>Profiler does not support Stack Usage</p>`
     }
   </div>
